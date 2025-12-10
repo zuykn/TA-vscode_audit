@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "2.0.0",
+  "info": {
+    "title": "VS Code Audit Add-on",
+    "id": {
+      "group": null,
+      "name": "TA-vscode_audit",
+      "version": "1.0.0"
+    },
+    "author": [
+      {
+        "name": "zuykn.io",
+        "email": null,
+        "company": null
+      }
+    ],
+    "releaseDate": null,
+    "description": "VS Code Audit Add-on by zuykn.io - Collects Visual Studio Code configuration, extensions, workspace settings, and remote development telemetry for security and operational monitoring.",
+    "classification": {
+      "intendedAudience": null,
+      "categories": [],
+      "developmentStatus": null
+    },
+    "commonInformationModels": null,
+    "license": {
+      "name": null,
+      "text": null,
+      "uri": null
+    },
+    "privacyPolicy": {
+      "name": null,
+      "text": null,
+      "uri": null
+    },
+    "releaseNotes": {
+      "name": null,
+      "text": "./README.md",
+      "uri": null
+    }
+  },
+  "dependencies": null,
+  "tasks": null,
+  "inputGroups": null,
+  "incompatibleApps": null,
+  "platformRequirements": null,
+  "supportedDeployments": [
+    "_standalone",
+    "_distributed"
+  ],
+  "targetWorkloads": null
+}
