@@ -1778,6 +1778,14 @@ for /f "usebackq delims=" %%L in ("!temp_storage_file!") do (
                 ) else if not "!val:wsl=!"=="!val!" (
                     REM Remove wsl prefix (wslInstanceName) and extract path  
                     for /f "tokens=1* delims=/" %%a in ("!val!") do set "val=/%%b"
+                ) else if not "!val:attached-container+=!"=="!val!" (
+                    REM Remove attached-container+hex prefix and extract path
+                    set "val=!val:attached-container+=!"
+                    for /f "tokens=1* delims=/" %%a in ("!val!") do set "val=/%%b"
+                ) else if not "!val:dev-container+=!"=="!val!" (
+                    REM Remove dev-container+hex prefix and extract path
+                    set "val=!val:dev-container+=!"
+                    for /f "tokens=1* delims=/" %%a in ("!val!") do set "val=/%%b"
                 ) else (
                     REM Fallback for other remote types
                     for /f "tokens=1* delims=/" %%a in ("!val!") do set "val=/%%b"
@@ -1837,6 +1845,14 @@ for /f "usebackq delims=" %%L in ("!temp_storage_file!") do (
                         for /f "tokens=1* delims=/" %%a in ("!val!") do set "val=/%%b"
                     ) else if not "!val:wsl=!"=="!val!" (
                         REM Remove wsl prefix (wslInstanceName) and extract path  
+                        for /f "tokens=1* delims=/" %%a in ("!val!") do set "val=/%%b"
+                    ) else if not "!val:attached-container+=!"=="!val!" (
+                        REM Remove attached-container+hex prefix and extract path
+                        set "val=!val:attached-container+=!"
+                        for /f "tokens=1* delims=/" %%a in ("!val!") do set "val=/%%b"
+                    ) else if not "!val:dev-container+=!"=="!val!" (
+                        REM Remove dev-container+hex prefix and extract path
+                        set "val=!val:dev-container+=!"
                         for /f "tokens=1* delims=/" %%a in ("!val!") do set "val=/%%b"
                     ) else (
                         REM Fallback for other remote types
@@ -1993,6 +2009,16 @@ for /f "usebackq delims=" %%L in ("!temp_storage_file!") do (
                         if "!backup_host:~0,1!"=="B" set "backup_host=+!backup_host:~1!"
                         REM Remove leading + if present (wsl+dist -> dist)
                         if "!backup_host:~0,1!"=="+" set "backup_host=!backup_host:~1!"
+                    ) else if not "!backup_remote:attached-container=!"=="!backup_remote!" (
+                        REM Attached container format: attached-container+hexdata
+                        set "backup_conn_type=attached-container"
+                        for /f "tokens=2 delims=+" %%h in ("!backup_remote!") do set "backup_host=%%h"
+                        if "!backup_host!"=="" set "backup_host=!backup_remote!"
+                    ) else if not "!backup_remote:dev-container=!"=="!backup_remote!" (
+                        REM Dev container format: dev-container+hexdata
+                        set "backup_conn_type=dev-container"
+                        for /f "tokens=2 delims=+" %%h in ("!backup_remote!") do set "backup_host=%%h"
+                        if "!backup_host!"=="" set "backup_host=!backup_remote!"
                     ) else (
                         REM SSH remote authority format: ssh-remote+hostname
                         for /f "tokens=1,2 delims=+" %%a in ("!backup_remote!") do (
@@ -2009,16 +2035,45 @@ for /f "usebackq delims=" %%L in ("!temp_storage_file!") do (
                 ) else (
                     REM Check if it's a remote URI that wasn't parsed
                     if not "!backup_workspace:vscode-remote=!"=="!backup_workspace!" (
-                        REM Extract from vscode-remote://ssh-remote%2Bhost/path format
-                        for /f "tokens=2 delims=%%" %%h in ("!backup_workspace!") do (
-                            set "remote_host=%%h"
-                            set "remote_host=!remote_host:2B=!"
-                            for /f "tokens=1 delims=/" %%p in ("!remote_host!") do (
-                                set "clean_host=%%p"
-                                for /f "tokens=2 delims=/" %%r in ("!backup_workspace!") do (
-                                    call :add_recent_session_to_array "%%r" "ssh-remote" "!clean_host!" "!target_user!"
+                        REM Handle different remote URI types
+                        if not "!backup_workspace:attached-container=!"=="!backup_workspace!" (
+                            REM attached-container URI: extract hex and workspace path
+                            set "backup_uri=!backup_workspace:vscode-remote://attached-container=!"
+                            set "backup_uri=!backup_uri:%%2B=+!"
+                            for /f "tokens=1 delims=/" %%h in ("!backup_uri!") do set "backup_hex=%%h"
+                            set "backup_hex=!backup_hex:+=!"
+                            REM Extract workspace path after hex
+                            for /f "tokens=1* delims=/" %%a in ("!backup_uri!") do set "backup_path=/%%b"
+                            call :add_recent_session_to_array "!backup_path!" "attached-container" "!backup_hex!" "!target_user!"
+                        ) else if not "!backup_workspace:dev-container=!"=="!backup_workspace!" (
+                            REM dev-container URI: extract hex and workspace path
+                            set "backup_uri=!backup_workspace:vscode-remote://dev-container=!"
+                            set "backup_uri=!backup_uri:%%2B=+!"
+                            for /f "tokens=1 delims=/" %%h in ("!backup_uri!") do set "backup_hex=%%h"
+                            set "backup_hex=!backup_hex:+=!"
+                            REM Extract workspace path after hex
+                            for /f "tokens=1* delims=/" %%a in ("!backup_uri!") do set "backup_path=/%%b"
+                            call :add_recent_session_to_array "!backup_path!" "dev-container" "!backup_hex!" "!target_user!"
+                        ) else if not "!backup_workspace:ssh-remote=!"=="!backup_workspace!" (
+                            REM Extract from vscode-remote://ssh-remote%2Bhost/path format
+                            for /f "tokens=2 delims=%%" %%h in ("!backup_workspace!") do (
+                                set "remote_host=%%h"
+                                set "remote_host=!remote_host:2B=!"
+                                for /f "tokens=1 delims=/" %%p in ("!remote_host!") do (
+                                    set "clean_host=%%p"
+                                    for /f "tokens=2 delims=/" %%r in ("!backup_workspace!") do (
+                                        call :add_recent_session_to_array "%%r" "ssh-remote" "!clean_host!" "!target_user!"
+                                    )
                                 )
                             )
+                        ) else if not "!backup_workspace:wsl=!"=="!backup_workspace!" (
+                            REM WSL URI: extract instance and path
+                            set "backup_uri=!backup_workspace:vscode-remote://wsl=!"
+                            set "backup_uri=!backup_uri:%%2B=+!"
+                            for /f "tokens=1 delims=/" %%h in ("!backup_uri!") do set "backup_host=%%h"
+                            set "backup_host=!backup_host:+=!"
+                            for /f "tokens=1* delims=/" %%a in ("!backup_uri!") do set "backup_path=/%%b"
+                            call :add_recent_session_to_array "!backup_path!" "wsl" "!backup_host!" "!target_user!"
                         )
                     ) else (
                         REM Local workspace
@@ -2753,47 +2808,61 @@ set "user_home=!USER_HOME_RESULT!"
 
 set "user_ssh_config=!user_home!\.ssh\config"
 
-REM Read SSH config
+REM Read SSH config - first matching Host block wins
 if exist "!user_ssh_config!" (
     set "in_host=0"
+    set "found_match=0"
+    set "found_user="
+    set "found_auth="
     for /f "usebackq tokens=*" %%l in ("!user_ssh_config!") do (
         set "line=%%l"
-        REM Check if line contains "Host "
-        echo !line! | findstr /B /C:"Host " >nul 2>nul
-        if not errorlevel 1 (
-            set "in_host=0"
-            REM Check if it's the specific host we're looking for
-            echo !line! | findstr /C:"Host !host!" >nul 2>nul
-            if not errorlevel 1 set "in_host=1"
-            REM Also match wildcard hosts
-            echo !line! | findstr /C:"Host *" >nul 2>nul
-            if not errorlevel 1 set "in_host=1"
-        )
-        if "!in_host!"=="1" (
-            if not "!line:User =!"=="!line!" (
-                for /f "tokens=2" %%u in ("!line!") do (
-                    if not "%%u"=="" (
-                        set "SSH_USER_RESULT=%%u"
-                        REM Filter out hostnames - if "user" matches the remote host, it's likely a hostname not a username
-                        if /I "%%u"=="!host!" set "SSH_USER_RESULT=unknown"
-                        REM Filter out common patterns that indicate hostname instead of username
-                        echo %%u | findstr /C:"." >nul 2>nul
-                        if not errorlevel 1 (
-                            REM If it contains dots, likely a FQDN hostname
-                            echo %%u | findstr /R "^[0-9][0-9]*\.[0-9]" >nul 2>nul
-                            if not errorlevel 1 set "SSH_USER_RESULT=unknown"
+        REM Skip empty lines and comments
+        if not "!line!"=="" if not "!line:~0,1!"=="#" (
+            REM Check if line starts with Host or Match (new block)
+            echo !line! | findstr /B /C:"Host " /C:"Match " >nul 2>nul
+            if not errorlevel 1 (
+                REM If we were in a matching block, we're done (first match wins)
+                if "!in_host!"=="1" (
+                    set "found_match=1"
+                )
+                set "in_host=0"
+                REM Only check for new match if we haven't found one yet
+                if "!found_match!"=="0" (
+                    REM Check if this Host line matches our target exactly
+                    for /f "tokens=1,*" %%a in ("!line!") do (
+                        if /I "%%a"=="Host" (
+                            for %%p in (%%b) do (
+                                if "%%p"=="!host!" set "in_host=1"
+                                if "%%p"=="*" set "in_host=1"
+                            )
                         )
                     )
                 )
-            )
-            if not "!line:IdentityFile =!"=="!line!" set "SSH_AUTH_RESULT=publickey"
-            if not "!line:PreferredAuthentications =!"=="!line!" (
-                for /f "tokens=2" %%a in ("!line!") do (
-                    if not "%%a"=="" set "SSH_AUTH_RESULT=%%a"
+            ) else if "!in_host!"=="1" if "!found_match!"=="0" (
+                REM Extract User (only if not already found)
+                if not defined found_user (
+                    if not "!line:User =!"=="!line!" (
+                        for /f "tokens=2" %%u in ("!line!") do (
+                            if not "%%u"=="" set "found_user=%%u"
+                        )
+                    )
+                )
+                REM Extract auth from IdentityFile (only if not already found)
+                if not defined found_auth (
+                    if not "!line:IdentityFile =!"=="!line!" set "found_auth=publickey"
+                )
+                REM Extract PreferredAuthentications (overrides IdentityFile)
+                if not "!line:PreferredAuthentications =!"=="!line!" (
+                    for /f "tokens=2" %%a in ("!line!") do (
+                        if not "%%a"=="" set "found_auth=%%a"
+                    )
                 )
             )
         )
     ) 2>nul
+    REM Apply found values
+    if defined found_user set "SSH_USER_RESULT=!found_user!"
+    if defined found_auth set "SSH_AUTH_RESULT=!found_auth!"
 )
 
 exit /b 0

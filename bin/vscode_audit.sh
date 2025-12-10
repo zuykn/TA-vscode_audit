@@ -1374,42 +1374,77 @@ lookup_ssh_info() {
     
     # Try to read SSH config
     if [ -f "$user_ssh_config" ] && [ -r "$user_ssh_config" ]; then
-        in_host=0
-        while IFS= read -r line; do
-            # Check if line starts with "Host "
-            if echo "$line" | grep -q "^Host "; then
-                in_host=0
-                # Check if it matches our host or wildcard
-                if echo "$line" | grep -q "Host $host" || echo "$line" | grep -q "Host \*"; then
-                    in_host=1
+        in_matching_block=0
+        found_user=""
+        found_auth=""
+        
+        while IFS= read -r line || [ -n "$line" ]; do
+            # Skip empty lines and comments
+            case "$line" in
+                ""|\#*) continue ;;
+            esac
+            
+            # Check for Host or Match directive (starts new block)
+            if echo "$line" | grep -qE "^(Host|Match) "; then
+                # If we were in a matching block and found data, stop (first match wins in SSH)
+                if [ "$in_matching_block" = "1" ]; then
+                    break
                 fi
+                
+                in_matching_block=0
+                
+                # Check if this Host line matches our target
+                if echo "$line" | grep -q "^Host "; then
+                    # Extract host patterns from the line
+                    host_patterns=$(echo "$line" | sed 's/^Host[[:space:]]*//')
+                    # Check each pattern (space-separated)
+                    for pattern in $host_patterns; do
+                        if [ "$pattern" = "$host" ]; then
+                            in_matching_block=1
+                            break
+                        fi
+                        # Handle wildcard * (matches all)
+                        if [ "$pattern" = "*" ]; then
+                            in_matching_block=1
+                            break
+                        fi
+                    done
+                fi
+                continue
             fi
             
-            if [ "$in_host" = "1" ]; then
-                # Extract User
-                if echo "$line" | grep -q "^[[:space:]]*User "; then
-                    user_val=$(echo "$line" | sed 's/^[[:space:]]*User[[:space:]]*//')
-                    if [ -n "$user_val" ] && [ "$user_val" != "$host" ]; then
-                        # Filter out hostnames (containing dots)
-                        if ! echo "$user_val" | grep -q '\.'; then
-                            SSH_USER_RESULT="$user_val"
-                        fi
+            # Only process settings if we're in a matching block
+            if [ "$in_matching_block" = "1" ]; then
+                # Extract User (only if not already found)
+                if [ -z "$found_user" ] && echo "$line" | grep -q "^[[:space:]]*User "; then
+                    user_val=$(echo "$line" | sed 's/^[[:space:]]*User[[:space:]]*//' | awk '{print $1}')
+                    if [ -n "$user_val" ]; then
+                        found_user="$user_val"
                     fi
                 fi
                 
-                # Extract auth method
-                if echo "$line" | grep -q "^[[:space:]]*IdentityFile "; then
-                    SSH_AUTH_RESULT="publickey"
+                # Extract auth method from IdentityFile (only if not already found)
+                if [ -z "$found_auth" ] && echo "$line" | grep -q "^[[:space:]]*IdentityFile "; then
+                    found_auth="publickey"
                 fi
                 
+                # Extract PreferredAuthentications (overrides IdentityFile)
                 if echo "$line" | grep -q "^[[:space:]]*PreferredAuthentications "; then
-                    auth_val=$(echo "$line" | sed 's/^[[:space:]]*PreferredAuthentications[[:space:]]*//')
+                    auth_val=$(echo "$line" | sed 's/^[[:space:]]*PreferredAuthentications[[:space:]]*//' | awk '{print $1}')
                     if [ -n "$auth_val" ]; then
-                        SSH_AUTH_RESULT="$auth_val"
+                        found_auth="$auth_val"
                     fi
                 fi
             fi
         done < "$user_ssh_config"
+        
+        # Apply found values
+        if [ -n "$found_user" ]; then
+            SSH_USER_RESULT="$found_user"
+        fi
+        if [ -n "$found_auth" ]; then
+            SSH_AUTH_RESULT="$found_auth"
+        fi
     fi
 }
 
@@ -1580,21 +1615,31 @@ process_active_session() {
         connection_type="local"
         remote_host=""
         auth_method="local"
+        session_user="$target_user"
         
         if echo "$decoded_path" | grep -q "vscode-remote://"; then
             if echo "$decoded_path" | grep -q "ssh-remote"; then
                 connection_type="ssh-remote"
                 remote_host=$(echo "$decoded_path" | sed 's/.*ssh-remote+\([^/]*\).*/\1/')
                 auth_method="publickey"
+                session_user="unknown"
                 # Lookup SSH config
                 lookup_ssh_info "$remote_host" "$target_user"
                 if [ "$SSH_USER_RESULT" != "unknown" ]; then
-                    remote_user="$SSH_USER_RESULT"
+                    session_user="$SSH_USER_RESULT"
                     auth_method="$SSH_AUTH_RESULT"
+                fi
+                # Extract workspace path (everything after hostname/)
+                workspace_suffix=$(echo "$decoded_path" | sed 's|.*ssh-remote+[^/]*/||')
+                if [ -n "$workspace_suffix" ]; then
+                    decoded_path="/$workspace_suffix"
+                else
+                    decoded_path=""
                 fi
             elif echo "$decoded_path" | grep -q "dev-container"; then
                 connection_type="dev-container"
                 auth_method="docker"
+                session_user="unknown"
                 # Extract hex data and workspace path from dev-container+HEX/path format
                 hex_data=$(echo "$decoded_path" | sed 's|.*dev-container+\([^/]*\).*|\1|')
                 get_container_info_from_hex "$hex_data" "dev"
@@ -1609,15 +1654,30 @@ process_active_session() {
             elif echo "$decoded_path" | grep -q "attached-container"; then
                 connection_type="attached-container"
                 auth_method="docker"
+                session_user="unknown"
                 # Extract hex data from attached-container+HEX format
                 hex_data=$(echo "$decoded_path" | sed 's|.*attached-container+\([^/]*\).*|\1|')
                 get_container_info_from_hex "$hex_data" "attached"
                 remote_host="$CONTAINER_NAME"
-                decoded_path=""
+                # Extract workspace path (everything after hex/)
+                workspace_suffix=$(echo "$decoded_path" | sed 's|.*attached-container+[^/]*/||')
+                if [ -n "$workspace_suffix" ]; then
+                    decoded_path="/$workspace_suffix"
+                else
+                    decoded_path=""
+                fi
             elif echo "$decoded_path" | grep -q "wsl"; then
                 connection_type="wsl"
                 remote_host=$(echo "$decoded_path" | sed 's/.*wsl+\([^/]*\).*/\1/')
                 auth_method="local"
+                session_user="unknown"
+                # Extract workspace path (everything after instance/)
+                workspace_suffix=$(echo "$decoded_path" | sed 's|.*wsl+[^/]*/||')
+                if [ -n "$workspace_suffix" ]; then
+                    decoded_path="/$workspace_suffix"
+                else
+                    decoded_path=""
+                fi
             fi
         else
             # Strip file:// prefix from local paths
@@ -1637,7 +1697,7 @@ process_active_session() {
             safe_storage=$(escape_json_string "$storage_file")
             safe_path=$(escape_json_string "$decoded_path")
             safe_host=$(escape_json_string "$remote_host")
-            safe_user=$(escape_json_string "$target_user")
+            safe_user=$(escape_json_string "$session_user")
             safe_auth=$(escape_json_string "$auth_method")
             safe_conn=$(escape_json_string "$connection_type")
             
@@ -1750,6 +1810,7 @@ process_active_session() {
                 connection_type="local"
                 remote_host=""
                 auth_method="local"
+                session_user="$target_user"
                 
                 # Check remoteAuthority field first (modern VS Code format)
                 if [ -n "$remote_authority" ]; then
@@ -1758,15 +1819,26 @@ process_active_session() {
                         # Extract host from ssh-remote+HOST format
                         remote_host=$(echo "$remote_authority" | sed 's/ssh-remote+//')
                         auth_method="publickey"
+                        session_user="unknown"
                         # Lookup SSH config
                         lookup_ssh_info "$remote_host" "$target_user"
                         if [ "$SSH_USER_RESULT" != "unknown" ]; then
-                            remote_user="$SSH_USER_RESULT"
+                            session_user="$SSH_USER_RESULT"
                             auth_method="$SSH_AUTH_RESULT"
+                        fi
+                        # Extract workspace path from folder URI (vscode-remote://ssh-remote+HOST/path)
+                        if [ -n "$decoded_path" ] && echo "$decoded_path" | grep -q "vscode-remote://"; then
+                            workspace_suffix=$(echo "$decoded_path" | sed 's|.*ssh-remote+[^/]*/||')
+                            if [ -n "$workspace_suffix" ]; then
+                                decoded_path="/$workspace_suffix"
+                            else
+                                decoded_path=""
+                            fi
                         fi
                     elif echo "$remote_authority" | grep -q "dev-container"; then
                         connection_type="dev-container"
                         auth_method="docker"
+                        session_user="unknown"
                         # Extract hex data from dev-container+HEX format
                         hex_data=$(echo "$remote_authority" | sed 's/dev-container+//')
                         get_container_info_from_hex "$hex_data" "dev"
@@ -1786,12 +1858,20 @@ process_active_session() {
                     elif echo "$remote_authority" | grep -q "attached-container"; then
                         connection_type="attached-container"
                         auth_method="docker"
+                        session_user="unknown"
                         # Extract hex data from attached-container+HEX format
                         hex_data=$(echo "$remote_authority" | sed 's/attached-container+//')
                         get_container_info_from_hex "$hex_data" "attached"
                         remote_host="$CONTAINER_NAME"
-                        # attached-container typically has no workspace path (empty window)
-                        if [ -z "$decoded_path" ]; then
+                        # Extract workspace path from folder URI (vscode-remote://attached-container+HEX/path)
+                        if [ -n "$decoded_path" ] && echo "$decoded_path" | grep -q "vscode-remote://"; then
+                            workspace_suffix=$(echo "$decoded_path" | sed 's|.*attached-container+[^/]*/||')
+                            if [ -n "$workspace_suffix" ]; then
+                                decoded_path="/$workspace_suffix"
+                            else
+                                decoded_path=""
+                            fi
+                        elif [ -z "$decoded_path" ]; then
                             decoded_path=""
                         fi
                     elif echo "$remote_authority" | grep -q "wsl"; then
@@ -1799,6 +1879,7 @@ process_active_session() {
                         # Extract instance from wsl+INSTANCE format
                         remote_host=$(echo "$remote_authority" | sed 's/wsl+//')
                         auth_method="local"
+                        session_user="unknown"
                     fi
                     # Strip file:// prefix from local path if present (folder field is local path for remote connections)
                     if [ -n "$decoded_path" ]; then
@@ -1813,15 +1894,17 @@ process_active_session() {
                         # Extract path after the hostname (everything after first /)
                         decoded_path=$(echo "$decoded_path" | sed 's|vscode-remote://ssh-remote+[^/]*/|/|')
                         auth_method="publickey"
+                        session_user="unknown"
                         # Lookup SSH config
                         lookup_ssh_info "$remote_host" "$target_user"
                         if [ "$SSH_USER_RESULT" != "unknown" ]; then
-                            remote_user="$SSH_USER_RESULT"
+                            session_user="$SSH_USER_RESULT"
                             auth_method="$SSH_AUTH_RESULT"
                         fi
                     elif echo "$decoded_path" | grep -q "dev-container"; then
                         connection_type="dev-container"
                         auth_method="docker"
+                        session_user="unknown"
                         # Extract hex data from vscode-remote://dev-container+HEX/path format
                         hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://dev-container+||' | cut -d'/' -f1)
                         get_container_info_from_hex "$hex_data" "dev"
@@ -1833,6 +1916,21 @@ process_active_session() {
                         else
                             decoded_path="$CONTAINER_LOCAL_PATH"
                         fi
+                    elif echo "$decoded_path" | grep -q "attached-container"; then
+                        connection_type="attached-container"
+                        auth_method="docker"
+                        session_user="unknown"
+                        # Extract hex data from vscode-remote://attached-container+HEX/path format
+                        hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://attached-container+||' | cut -d'/' -f1)
+                        get_container_info_from_hex "$hex_data" "attached"
+                        remote_host="$CONTAINER_NAME"
+                        # Extract workspace path (everything after hex/)
+                        workspace_suffix=$(echo "$decoded_path" | sed 's|vscode-remote://attached-container+[^/]*/||')
+                        if [ -n "$workspace_suffix" ]; then
+                            decoded_path="/$workspace_suffix"
+                        else
+                            decoded_path=""
+                        fi
                     elif echo "$decoded_path" | grep -q "wsl"; then
                         connection_type="wsl"
                         # Extract WSL instance name from vscode-remote://wsl+INSTANCE/path format
@@ -1840,6 +1938,7 @@ process_active_session() {
                         # Extract path after the instance name
                         decoded_path=$(echo "$decoded_path" | sed 's|vscode-remote://wsl+[^/]*/|/|')
                         auth_method="local"
+                        session_user="unknown"
                     fi
                 else
                     # Strip file:// prefix from local paths if present
@@ -1866,7 +1965,7 @@ process_active_session() {
                 safe_storage=$(escape_json_string "$storage_file")
                 safe_path=$(escape_json_string "$decoded_path")
                 safe_host=$(escape_json_string "$remote_host")
-                safe_user=$(escape_json_string "$target_user")
+                safe_user=$(escape_json_string "$session_user")
                 safe_auth=$(escape_json_string "$auth_method")
                 safe_conn=$(escape_json_string "$connection_type")
                 
@@ -1921,6 +2020,7 @@ process_active_session() {
             connection_type="local"
             remote_host=""
             auth_method="local"
+            session_user="$target_user"
             
             if echo "$decoded_path" | grep -q "vscode-remote://"; then
                 if echo "$decoded_path" | grep -q "ssh-remote"; then
@@ -1930,9 +2030,11 @@ process_active_session() {
                     # Extract path after the hostname
                     decoded_path=$(echo "$decoded_path" | sed 's|vscode-remote://ssh-remote+[^/]*/|/|')
                     auth_method="publickey"
+                    session_user="unknown"
                 elif echo "$decoded_path" | grep -q "dev-container"; then
                     connection_type="dev-container"
                     auth_method="docker"
+                    session_user="unknown"
                     # Extract hex data from vscode-remote://dev-container+HEX/path format
                     hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://dev-container+||' | cut -d'/' -f1)
                     get_container_info_from_hex "$hex_data" "dev"
@@ -1950,7 +2052,13 @@ process_active_session() {
                     hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://attached-container+||' | cut -d'/' -f1)
                     get_container_info_from_hex "$hex_data" "attached"
                     remote_host="$CONTAINER_NAME"
-                    decoded_path=""
+                    # Extract workspace path (everything after hex/)
+                    workspace_suffix=$(echo "$decoded_path" | sed 's|vscode-remote://attached-container+[^/]*/||')
+                    if [ -n "$workspace_suffix" ]; then
+                        decoded_path="/$workspace_suffix"
+                    else
+                        decoded_path=""
+                    fi
                 elif echo "$decoded_path" | grep -q "wsl"; then
                     connection_type="wsl"
                     # Extract WSL instance name
@@ -1958,6 +2066,7 @@ process_active_session() {
                     # Extract path after the instance name
                     decoded_path=$(echo "$decoded_path" | sed 's|vscode-remote://wsl+[^/]*/|/|')
                     auth_method="local"
+                    session_user="unknown"
                 fi
             else
                 # Strip file:// prefix from local paths
@@ -1977,7 +2086,7 @@ process_active_session() {
                 safe_storage=$(escape_json_string "$storage_file")
                 safe_path=$(escape_json_string "$decoded_path")
                 safe_host=$(escape_json_string "$remote_host")
-                safe_user=$(escape_json_string "$target_user")
+                safe_user=$(escape_json_string "$session_user")
                 safe_auth=$(escape_json_string "$auth_method")
                 safe_conn=$(escape_json_string "$connection_type")
                 
@@ -2025,15 +2134,18 @@ process_active_session() {
             connection_type="local"
             remote_host=""
             auth_method="local"
+            session_user="$target_user"
             
             if echo "$decoded_path" | grep -q "vscode-remote://"; then
                 if echo "$decoded_path" | grep -q "ssh-remote"; then
                     connection_type="ssh-remote"
                     remote_host=$(echo "$decoded_path" | sed 's/.*ssh-remote+\([^/]*\).*/\1/')
                     auth_method="publickey"
+                    session_user="unknown"
                 elif echo "$decoded_path" | grep -q "dev-container"; then
                     connection_type="dev-container"
                     auth_method="docker"
+                    session_user="unknown"
                     # Extract hex data from vscode-remote://dev-container+HEX/path format
                     hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://dev-container+||' | cut -d'/' -f1)
                     get_container_info_from_hex "$hex_data" "dev"
@@ -2048,14 +2160,22 @@ process_active_session() {
                 elif echo "$decoded_path" | grep -q "attached-container"; then
                     connection_type="attached-container"
                     auth_method="docker"
+                    session_user="unknown"
                     hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://attached-container+||' | cut -d'/' -f1)
                     get_container_info_from_hex "$hex_data" "attached"
                     remote_host="$CONTAINER_NAME"
-                    decoded_path=""
+                    # Extract workspace path (everything after hex/)
+                    workspace_suffix=$(echo "$decoded_path" | sed 's|vscode-remote://attached-container+[^/]*/||')
+                    if [ -n "$workspace_suffix" ]; then
+                        decoded_path="/$workspace_suffix"
+                    else
+                        decoded_path=""
+                    fi
                 elif echo "$decoded_path" | grep -q "wsl"; then
                     connection_type="wsl"
                     remote_host=$(echo "$decoded_path" | sed 's/.*wsl+\([^/]*\).*/\1/')
                     auth_method="local"
+                    session_user="unknown"
                 fi
             else
                 # Strip file:// prefix from local paths
@@ -2075,7 +2195,7 @@ process_active_session() {
                 safe_storage=$(escape_json_string "$storage_file")
                 safe_path=$(escape_json_string "$decoded_path")
                 safe_host=$(escape_json_string "$remote_host")
-                safe_user=$(escape_json_string "$target_user")
+                safe_user=$(escape_json_string "$session_user")
                 safe_auth=$(escape_json_string "$auth_method")
                 safe_conn=$(escape_json_string "$connection_type")
                 
@@ -2128,14 +2248,8 @@ process_active_session() {
             
             # This is a connection from profileAssociations - historical SSH host without workspace
             
-            # Lookup SSH configuration
-            ssh_user="$target_user"
-            ssh_auth="publickey"
-            if [ -f "$HOME/.ssh/config" ] || [ -f "/etc/ssh/ssh_config" ]; then
-                ssh_config_user=$(grep -A 10 "^Host[[:space:]]\\+${remote_host}$" "$HOME/.ssh/config" /etc/ssh/ssh_config 2>/dev/null | \
-                    grep -i "^[[:space:]]*User[[:space:]]" | head -1 | awk '{print $2}')
-                [ -n "$ssh_config_user" ] && ssh_user="$ssh_config_user"
-            fi
+            # Lookup SSH configuration using the proper function
+            lookup_ssh_info "$remote_host" "$target_user"
             
             # Mark this host as seen (add to seen_sessions with empty workspace for profileAssociations)
             seen_sessions="${seen_sessions}|ssh-remote:${remote_host}:|"
@@ -2149,8 +2263,8 @@ process_active_session() {
                 # Escape for JSON
                 safe_storage=$(escape_json_string "$storage_file")
                 safe_host=$(escape_json_string "$remote_host")
-                safe_user=$(escape_json_string "$ssh_user")
-            safe_auth=$(escape_json_string "$ssh_auth")
+                safe_user=$(escape_json_string "$SSH_USER_RESULT")
+                safe_auth=$(escape_json_string "$SSH_AUTH_RESULT")
             
             # Add profileAssociations session (empty workspace_path, window_type=empty)
             sessions_array="${sessions_array}{\"storage_file_path\":\"$safe_storage\",\"connection_type\":\"ssh-remote\",\"remote_host\":\"$safe_host\",\"user\":\"$safe_user\",\"auth_method\":\"$safe_auth\",\"window_type\":\"empty\",\"workspace_path\":\"\",\"is_active\":false}"
