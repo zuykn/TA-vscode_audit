@@ -1448,10 +1448,31 @@ hex_decode() {
 # The hex decodes to the local workspace path (e.g., /Users/user/project)
 get_container_info_from_hex() {
     hex_data="$1"
-    # Decode hex to get local path
-    CONTAINER_LOCAL_PATH=$(hex_decode "$hex_data")
-    # Extract container name from path (last component)
-    CONTAINER_NAME=$(basename "$CONTAINER_LOCAL_PATH" 2>/dev/null)
+    container_type="$2"  # "attached" or "dev"
+    
+    # Decode hex to get content
+    decoded_content=$(hex_decode "$hex_data")
+    
+    if [ "$container_type" = "attached" ]; then
+        # attached-container format: {"containerName":"/container_name","settings":{...}}
+        # Extract containerName value from JSON using sed
+        CONTAINER_NAME=$(echo "$decoded_content" | sed -n 's/.*"containerName"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+        # Remove leading slash if present
+        CONTAINER_NAME=$(echo "$CONTAINER_NAME" | sed 's|^/||')
+        CONTAINER_LOCAL_PATH=""
+    else
+        # dev-container formats
+        if echo "$decoded_content" | grep -q '"hostPath"'; then
+            # JSON format - extract hostPath
+            CONTAINER_LOCAL_PATH=$(echo "$decoded_content" | sed -n 's/.*"hostPath"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            CONTAINER_NAME=$(basename "$CONTAINER_LOCAL_PATH" 2>/dev/null)
+        else
+            # Plain path format
+            CONTAINER_LOCAL_PATH="$decoded_content"
+            CONTAINER_NAME=$(basename "$CONTAINER_LOCAL_PATH" 2>/dev/null)
+        fi
+    fi
+    
     if [ -z "$CONTAINER_NAME" ]; then
         CONTAINER_NAME="unknown"
     fi
@@ -1576,7 +1597,7 @@ process_active_session() {
                 auth_method="docker"
                 # Extract hex data and workspace path from dev-container+HEX/path format
                 hex_data=$(echo "$decoded_path" | sed 's|.*dev-container+\([^/]*\).*|\1|')
-                get_container_info_from_hex "$hex_data"
+                get_container_info_from_hex "$hex_data" "dev"
                 remote_host="$CONTAINER_NAME"
                 # Extract workspace path (everything after hex/)
                 workspace_suffix=$(echo "$decoded_path" | sed 's|.*dev-container+[^/]*/||')
@@ -1585,6 +1606,14 @@ process_active_session() {
                 else
                     decoded_path="$CONTAINER_LOCAL_PATH"
                 fi
+            elif echo "$decoded_path" | grep -q "attached-container"; then
+                connection_type="attached-container"
+                auth_method="docker"
+                # Extract hex data from attached-container+HEX format
+                hex_data=$(echo "$decoded_path" | sed 's|.*attached-container+\([^/]*\).*|\1|')
+                get_container_info_from_hex "$hex_data" "attached"
+                remote_host="$CONTAINER_NAME"
+                decoded_path=""
             elif echo "$decoded_path" | grep -q "wsl"; then
                 connection_type="wsl"
                 remote_host=$(echo "$decoded_path" | sed 's/.*wsl+\([^/]*\).*/\1/')
@@ -1740,7 +1769,7 @@ process_active_session() {
                         auth_method="docker"
                         # Extract hex data from dev-container+HEX format
                         hex_data=$(echo "$remote_authority" | sed 's/dev-container+//')
-                        get_container_info_from_hex "$hex_data"
+                        get_container_info_from_hex "$hex_data" "dev"
                         remote_host="$CONTAINER_NAME"
                         # Extract workspace path from folder URI (vscode-remote://dev-container+HEX/path)
                         # The folder field contains the full URI, so extract path after hex/
@@ -1753,6 +1782,17 @@ process_active_session() {
                             fi
                         elif [ -z "$decoded_path" ]; then
                             decoded_path="$CONTAINER_LOCAL_PATH"
+                        fi
+                    elif echo "$remote_authority" | grep -q "attached-container"; then
+                        connection_type="attached-container"
+                        auth_method="docker"
+                        # Extract hex data from attached-container+HEX format
+                        hex_data=$(echo "$remote_authority" | sed 's/attached-container+//')
+                        get_container_info_from_hex "$hex_data" "attached"
+                        remote_host="$CONTAINER_NAME"
+                        # attached-container typically has no workspace path (empty window)
+                        if [ -z "$decoded_path" ]; then
+                            decoded_path=""
                         fi
                     elif echo "$remote_authority" | grep -q "wsl"; then
                         connection_type="wsl"
@@ -1784,7 +1824,7 @@ process_active_session() {
                         auth_method="docker"
                         # Extract hex data from vscode-remote://dev-container+HEX/path format
                         hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://dev-container+||' | cut -d'/' -f1)
-                        get_container_info_from_hex "$hex_data"
+                        get_container_info_from_hex "$hex_data" "dev"
                         remote_host="$CONTAINER_NAME"
                         # Extract workspace path (everything after hex/)
                         workspace_suffix=$(echo "$decoded_path" | sed 's|vscode-remote://dev-container+[^/]*/||')
@@ -1895,7 +1935,7 @@ process_active_session() {
                     auth_method="docker"
                     # Extract hex data from vscode-remote://dev-container+HEX/path format
                     hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://dev-container+||' | cut -d'/' -f1)
-                    get_container_info_from_hex "$hex_data"
+                    get_container_info_from_hex "$hex_data" "dev"
                     remote_host="$CONTAINER_NAME"
                     # Extract workspace path (everything after hex/)
                     workspace_suffix=$(echo "$decoded_path" | sed 's|vscode-remote://dev-container+[^/]*/||')
@@ -1904,6 +1944,13 @@ process_active_session() {
                     else
                         decoded_path="$CONTAINER_LOCAL_PATH"
                     fi
+                elif echo "$decoded_path" | grep -q "attached-container"; then
+                    connection_type="attached-container"
+                    auth_method="docker"
+                    hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://attached-container+||' | cut -d'/' -f1)
+                    get_container_info_from_hex "$hex_data" "attached"
+                    remote_host="$CONTAINER_NAME"
+                    decoded_path=""
                 elif echo "$decoded_path" | grep -q "wsl"; then
                     connection_type="wsl"
                     # Extract WSL instance name
@@ -1989,7 +2036,7 @@ process_active_session() {
                     auth_method="docker"
                     # Extract hex data from vscode-remote://dev-container+HEX/path format
                     hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://dev-container+||' | cut -d'/' -f1)
-                    get_container_info_from_hex "$hex_data"
+                    get_container_info_from_hex "$hex_data" "dev"
                     remote_host="$CONTAINER_NAME"
                     # Extract workspace path (everything after hex/)
                     workspace_suffix=$(echo "$decoded_path" | sed 's|vscode-remote://dev-container+[^/]*/||')
@@ -1998,6 +2045,13 @@ process_active_session() {
                     else
                         decoded_path="$CONTAINER_LOCAL_PATH"
                     fi
+                elif echo "$decoded_path" | grep -q "attached-container"; then
+                    connection_type="attached-container"
+                    auth_method="docker"
+                    hex_data=$(echo "$decoded_path" | sed 's|vscode-remote://attached-container+||' | cut -d'/' -f1)
+                    get_container_info_from_hex "$hex_data" "attached"
+                    remote_host="$CONTAINER_NAME"
+                    decoded_path=""
                 elif echo "$decoded_path" | grep -q "wsl"; then
                     connection_type="wsl"
                     remote_host=$(echo "$decoded_path" | sed 's/.*wsl+\([^/]*\).*/\1/')

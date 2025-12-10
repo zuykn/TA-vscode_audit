@@ -6,7 +6,7 @@ Collects Visual Studio Code configuration, extensions, workspace settings, and r
 
 ### Platform
 - **Cross-platform**: Windows (batch), macOS (POSIX shell) – zero external dependencies, maximum compatibility across environments.
-- **Multi-variant detection**: Discovers VS Code Stable, Insiders, VSCodium, Code-OSS, and Cursor installations (v1: full collection for VS Code Stable only; others reported in installation inventory).
+- **Multi-variant detection**: Discovers VS Code Stable, Insiders, VSCodium, Code-OSS, Cursor, and Windsurf installations (v1: full collection for VS Code Stable only; others reported in installation inventory).
 - **Installation inventory**: Captures version, commit ID, architecture, install type (user/system), and client + server components.
 - **Complete extension inventory**: Captures client and server extensions with install source, dependencies, trust mode, and pinned versions.
 - **Remote session tracking**: SSH, WSL, attached containers, and dev-containers with connection metadata (host, user, auth method).
@@ -62,6 +62,7 @@ Both scripts detect installations for these variants and expose them via `vscode
 - VSCodium
 - Code – OSS
 - Cursor
+- Windsurf
 
 For **v1**:
 
