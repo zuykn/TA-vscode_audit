@@ -385,10 +385,9 @@ for /f "tokens=*" %%k in ('reg query "HKLM\SOFTWARE\Microsoft\Windows NT\Current
 exit /b 1
 
 :get_variant_config
-REM Variant configuration - defines all supported VS Code variants
+REM Variant configuration
 REM Args: variant_id
 REM Returns: Sets VARIANT_USER_DIR_SUFFIX, VARIANT_EXTENSIONS_DIR_SUFFIX, COLLECT_FULL_DATA
-REM Note: For v1, only "stable" has full data collection enabled
 set "gvc_variant=%~1"
 set "VARIANT_USER_DIR_SUFFIX="
 set "VARIANT_EXTENSIONS_DIR_SUFFIX="
@@ -661,31 +660,34 @@ exit /b 0
 
 :scan_dir_for_vscode
 REM Recursive function to scan for .vscode directories with depth limiting
-set "sdv_path=%~1"
-set "sdv_user=%~2"
-set "sdv_depth=%~3"
+REM IMPORTANT: Only use parameters %~1, %~2, %~3 and for variable %%d
+REM Do NOT store to intermediate variables - they get corrupted by recursion
 
 REM Check for .vscode and .devcontainer in this directory
-call :check_vscode_dir "!sdv_path!\.vscode" "!sdv_user!"
-call :check_devcontainer_dir "!sdv_path!\.devcontainer" "!sdv_user!"
+call :check_vscode_dir "%~1\.vscode" "%~2"
+call :check_devcontainer_dir "%~1\.devcontainer" "%~2"
 
 REM Stop if we've reached max depth
-if !sdv_depth! GEQ %MAX_WORKSPACE_DEPTH% exit /b 0
+if %~3 GEQ %MAX_WORKSPACE_DEPTH% exit /b 0
 
-REM Calculate next depth
-set /a "sdv_next_depth=!sdv_depth!+1"
+REM Calculate next depth using temp var that's immediately used
+set /a "sdv_nd=%~3+1"
 
-REM Scan subdirectories (only non-hidden, skip node_modules)
-REM Use dir /b /ad to list directories, avoiding for /d issues with special chars
-for /f "delims=" %%d in ('dir /b /ad "!sdv_path!" 2^>nul') do (
-    set "sdv_dirname=%%d"
-    set "sdv_subdir=!sdv_path!\%%d"
-    REM Skip hidden directories (start with .) and node_modules
-    set "sdv_first_char=!sdv_dirname:~0,1!"
-    if not "!sdv_first_char!"=="." (
-        if /i not "!sdv_dirname!"=="node_modules" (
-            call :scan_dir_for_vscode "!sdv_subdir!" "!sdv_user!" !sdv_next_depth!
+REM Scan subdirectories - use %%d directly, never store path to variable
+for /f "delims=" %%d in ('dir /b /ad "%~1" 2^>nul') do (
+    REM Skip hidden directories (start with .) - check first char of %%d
+    set "sdv_fc=%%d"
+    setlocal enabledelayedexpansion
+    set "sdv_fc=!sdv_fc:~0,1!"
+    if not "!sdv_fc!"=="." (
+        if /i not "%%d"=="node_modules" (
+            endlocal
+            call :scan_dir_for_vscode "%~1\%%d" "%~2" !sdv_nd!
+        ) else (
+            endlocal
         )
+    ) else (
+        endlocal
     )
 )
 exit /b 0
@@ -804,7 +806,7 @@ if "!CURRENT_VARIANT!"=="stable" (
     REM VS Code Server installations (only for stable variant)
     set "server_base_dir=!user_home!\.vscode-server"
     if exist "!server_base_dir!" (
-        REM Check for CLI-based server installations (stable only for v1)
+        REM Check for CLI-based server installations
         if exist "!server_base_dir!\cli\servers" (
             for /d %%s in ("!server_base_dir!\cli\servers\Stable-*") do (
                 set "server_dir=%%s"
@@ -1370,7 +1372,7 @@ REM Output: MULTILINE_ARRAY_RESULT = JSON array string (e.g., ["onStartupFinishe
 set "ema_file=%~1"
 set "ema_field=%~2"
 set "MULTILINE_ARRAY_RESULT=[]"
-REM TECHNIQUE: Store quote in variable for comparison since """" doesn't work reliably in batch
+REM Store quote in variable for comparison
 set "EMA_QUOTE=""
 
 if not exist "!ema_file!" exit /b 0
@@ -2872,7 +2874,6 @@ exit /b 0
 call :get_users_to_process
 
 REM Define all supported variants
-REM Order: stable first (full collection), then forks (installation only for v1)
 set "VARIANT_LIST=stable insiders vscodium cursor code-oss windsurf"
 
 REM Grant SYSTEM read access to .ssh\config if requested (once per user)

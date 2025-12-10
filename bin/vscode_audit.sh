@@ -270,9 +270,8 @@ get_user_home() {
     return 1
 }
 
-# Variant configuration - defines all supported VS Code variants
-# Format: variant_id|user_dir_suffix|extensions_dir_suffix|collect_full_data (1=yes, 0=installation only)
-# Note: For v1, only "stable" has full data collection enabled
+# Variant configuration
+# Format: user_dir_suffix|extensions_dir_suffix|collect_full_data
 get_variant_config() {
     variant_id="$1"
     case "$variant_id" in
@@ -1030,7 +1029,7 @@ process_installation() {
             # VS Code Server installations (only for stable variant)
             server_base_dir="$user_home/.vscode-server"
             if [ -d "$server_base_dir" ]; then
-                # Check for CLI-based server installations (stable only for v1)
+                # Check for CLI-based server installations
                 if [ -d "$server_base_dir/cli/servers" ]; then
                     for server_dir in "$server_base_dir/cli/servers"/Stable-*; do
                         if [ -d "$server_dir" ] && [ -f "$server_dir/server/product.json" ]; then
@@ -1454,6 +1453,23 @@ url_decode() {
     echo "$input" | sed 's/%2B/+/g; s/%20/ /g; s/%2F/\//g; s/%3A/:/g; s/%40/@/g'
 }
 
+# Normalize Windows-style paths in SSH remote workspace paths
+normalize_windows_path() {
+    input_path="$1"
+    # Check if path matches Windows pattern: /X:/... where X is a drive letter
+    if echo "$input_path" | grep -qE '^/[a-zA-Z]:'; then
+        # Remove leading slash, uppercase drive letter, convert / to backslash
+        drive_letter=$(printf '%s' "$input_path" | cut -c2 | tr 'a-z' 'A-Z')
+        rest_of_path=$(printf '%s' "$input_path" | cut -c3-)
+        # Convert forward slashes to backslashes using tr (avoids escape issues with sed)
+        rest_of_path=$(printf '%s' "$rest_of_path" | tr '/' '\\')
+        printf '%s%s' "$drive_letter" "$rest_of_path"
+    else
+        # Not a Windows path, return as-is
+        printf '%s' "$input_path"
+    fi
+}
+
 # Decode hex string to ASCII (POSIX compliant)
 # Used for dev-container hex-encoded paths
 hex_decode() {
@@ -1553,7 +1569,7 @@ process_active_session() {
             fi
             ;;
         Linux)
-            # Linux: Check for code process (stable only for v1)
+            # Linux: Check for code process
             if pgrep -x "code" >/dev/null 2>&1 || pgrep -f "VSCode" >/dev/null 2>&1; then
                 VSCODE_RUNNING=1
             fi
@@ -1633,6 +1649,8 @@ process_active_session() {
                 workspace_suffix=$(echo "$decoded_path" | sed 's|.*ssh-remote+[^/]*/||')
                 if [ -n "$workspace_suffix" ]; then
                     decoded_path="/$workspace_suffix"
+                    # Normalize Windows paths
+                    decoded_path=$(normalize_windows_path "$decoded_path")
                 else
                     decoded_path=""
                 fi
@@ -1681,7 +1699,7 @@ process_active_session() {
             fi
         else
             # Strip file:// prefix from local paths
-            decoded_path=$(echo "$decoded_path" | sed 's|^file://||')
+            decoded_path=$(printf '%s' "$decoded_path" | sed 's|^file://||')
         fi
         
         # Dedup check
@@ -1831,6 +1849,8 @@ process_active_session() {
                             workspace_suffix=$(echo "$decoded_path" | sed 's|.*ssh-remote+[^/]*/||')
                             if [ -n "$workspace_suffix" ]; then
                                 decoded_path="/$workspace_suffix"
+                                # Normalize Windows paths 
+                                decoded_path=$(normalize_windows_path "$decoded_path")
                             else
                                 decoded_path=""
                             fi
@@ -1883,16 +1903,18 @@ process_active_session() {
                     fi
                     # Strip file:// prefix from local path if present (folder field is local path for remote connections)
                     if [ -n "$decoded_path" ]; then
-                        decoded_path=$(echo "$decoded_path" | sed 's|^file://||')
+                        decoded_path=$(printf '%s' "$decoded_path" | sed 's|^file://||')
                     fi
                 # Fallback: check if folder path itself contains vscode-remote:// (old format)
                 elif [ -n "$decoded_path" ] && echo "$decoded_path" | grep -q "vscode-remote://"; then
                     if echo "$decoded_path" | grep -q "ssh-remote"; then
                         connection_type="ssh-remote"
                         # Extract remote host from vscode-remote://ssh-remote+HOST/path format
-                        remote_host=$(echo "$decoded_path" | sed 's|vscode-remote://ssh-remote+||' | cut -d'/' -f1)
+                        remote_host=$(printf '%s' "$decoded_path" | sed 's|vscode-remote://ssh-remote+||' | cut -d'/' -f1)
                         # Extract path after the hostname (everything after first /)
-                        decoded_path=$(echo "$decoded_path" | sed 's|vscode-remote://ssh-remote+[^/]*/|/|')
+                        decoded_path=$(printf '%s' "$decoded_path" | sed 's|vscode-remote://ssh-remote+[^/]*/|/|')
+                        # Normalize Windows paths 
+                        decoded_path=$(normalize_windows_path "$decoded_path")
                         auth_method="publickey"
                         session_user="unknown"
                         # Lookup SSH config
@@ -1934,16 +1956,16 @@ process_active_session() {
                     elif echo "$decoded_path" | grep -q "wsl"; then
                         connection_type="wsl"
                         # Extract WSL instance name from vscode-remote://wsl+INSTANCE/path format
-                        remote_host=$(echo "$decoded_path" | sed 's|vscode-remote://wsl+||' | cut -d'/' -f1)
+                        remote_host=$(printf '%s' "$decoded_path" | sed 's|vscode-remote://wsl+||' | cut -d'/' -f1)
                         # Extract path after the instance name
-                        decoded_path=$(echo "$decoded_path" | sed 's|vscode-remote://wsl+[^/]*/|/|')
+                        decoded_path=$(printf '%s' "$decoded_path" | sed 's|vscode-remote://wsl+[^/]*/|/|')
                         auth_method="local"
                         session_user="unknown"
                     fi
                 else
                     # Strip file:// prefix from local paths if present
                     if [ -n "$decoded_path" ]; then
-                        decoded_path=$(echo "$decoded_path" | sed 's|^file://||')
+                        decoded_path=$(printf '%s' "$decoded_path" | sed 's|^file://||')
                     fi
                 fi
                 
@@ -2026,9 +2048,11 @@ process_active_session() {
                 if echo "$decoded_path" | grep -q "ssh-remote"; then
                     connection_type="ssh-remote"
                     # Extract remote host
-                    remote_host=$(echo "$decoded_path" | sed 's|vscode-remote://ssh-remote+||' | cut -d'/' -f1)
+                    remote_host=$(printf '%s' "$decoded_path" | sed 's|vscode-remote://ssh-remote+||' | cut -d'/' -f1)
                     # Extract path after the hostname
-                    decoded_path=$(echo "$decoded_path" | sed 's|vscode-remote://ssh-remote+[^/]*/|/|')
+                    decoded_path=$(printf '%s' "$decoded_path" | sed 's|vscode-remote://ssh-remote+[^/]*/|/|')
+                    # Normalize Windows paths 
+                    decoded_path=$(normalize_windows_path "$decoded_path")
                     auth_method="publickey"
                     session_user="unknown"
                 elif echo "$decoded_path" | grep -q "dev-container"; then
@@ -2062,15 +2086,15 @@ process_active_session() {
                 elif echo "$decoded_path" | grep -q "wsl"; then
                     connection_type="wsl"
                     # Extract WSL instance name
-                    remote_host=$(echo "$decoded_path" | sed 's|vscode-remote://wsl+||' | cut -d'/' -f1)
+                    remote_host=$(printf '%s' "$decoded_path" | sed 's|vscode-remote://wsl+||' | cut -d'/' -f1)
                     # Extract path after the instance name
-                    decoded_path=$(echo "$decoded_path" | sed 's|vscode-remote://wsl+[^/]*/|/|')
+                    decoded_path=$(printf '%s' "$decoded_path" | sed 's|vscode-remote://wsl+[^/]*/|/|')
                     auth_method="local"
                     session_user="unknown"
                 fi
             else
                 # Strip file:// prefix from local paths
-                decoded_path=$(echo "$decoded_path" | sed 's|^file://||')
+                decoded_path=$(printf '%s' "$decoded_path" | sed 's|^file://||')
             fi
             
             # Dedup check
@@ -2140,6 +2164,15 @@ process_active_session() {
                 if echo "$decoded_path" | grep -q "ssh-remote"; then
                     connection_type="ssh-remote"
                     remote_host=$(echo "$decoded_path" | sed 's/.*ssh-remote+\([^/]*\).*/\1/')
+                    # Extract workspace path from URI
+                    workspace_suffix=$(echo "$decoded_path" | sed 's|.*ssh-remote+[^/]*/||')
+                    if [ -n "$workspace_suffix" ]; then
+                        decoded_path="/$workspace_suffix"
+                        # Normalize Windows paths 
+                        decoded_path=$(normalize_windows_path "$decoded_path")
+                    else
+                        decoded_path=""
+                    fi
                     auth_method="publickey"
                     session_user="unknown"
                 elif echo "$decoded_path" | grep -q "dev-container"; then
@@ -2179,7 +2212,7 @@ process_active_session() {
                 fi
             else
                 # Strip file:// prefix from local paths
-                decoded_path=$(echo "$decoded_path" | sed 's|^file://||')
+                decoded_path=$(printf '%s' "$decoded_path" | sed 's|^file://||')
             fi
             
             # Dedup check
@@ -2301,7 +2334,6 @@ main() {
     users_list=$(get_users_to_process)
     
     # Define all supported variants
-    # Order: stable first (full collection), then forks (installation only for v1)
     VARIANT_LIST="stable insiders vscodium cursor code-oss windsurf"
     
     # Process each user
@@ -2321,7 +2353,7 @@ main() {
             # Skip remaining collections if user directory doesn't exist
             [ ! -d "$VSCODE_USER_DIR" ] && continue
             
-            # v1: Full data collection only for VS Code Stable
+            # Skip if full data collection disabled for this variant
             if [ "$COLLECT_FULL_DATA" = "0" ]; then
                 continue
             fi
