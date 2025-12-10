@@ -291,6 +291,9 @@ get_variant_config() {
         code-oss)
             echo "Code - OSS|.vscode-oss|0"
             ;;
+        windsurf)
+            echo "Windsurf|.windsurf|0"
+            ;;
         *)
             echo ""
             ;;
@@ -316,6 +319,9 @@ get_product_name() {
             ;;
         code-oss)
             echo "Code - OSS"
+            ;;
+        windsurf)
+            echo "Windsurf"
             ;;
         *)
             echo "Unknown"
@@ -1004,12 +1010,7 @@ process_installation() {
     if [ $? -ne 0 ] || [ -z "$user_home" ]; then
         return 0
     fi
-    
-    # Check if VS Code user directory exists - skip if not found
-    if [ ! -d "$VSCODE_USER_DIR" ]; then
-        return 0
-    fi
-    
+
     # Initialize installation array and deduplication tracker
     installations_array=""
     array_first=1
@@ -1079,6 +1080,15 @@ process_installation() {
             process_variant_installation "/usr/bin/code-oss" "/usr/share/code-oss" "Code - OSS" "$target_user" "$user_home"
             # Linux /usr/local/bin
             process_variant_installation "/usr/local/bin/code-oss" "/opt/code-oss" "Code - OSS" "$target_user" "$user_home"
+            ;;
+        windsurf)
+            # macOS
+            process_variant_installation "/Applications/Windsurf.app/Contents/Resources/app/bin/windsurf" \
+                "/Applications/Windsurf.app" "Windsurf" "$target_user" "$user_home"
+            # Linux /usr/bin
+            process_variant_installation "/usr/bin/windsurf" "/opt/Windsurf" "Windsurf" "$target_user" "$user_home"
+            # Linux /usr/local/bin
+            process_variant_installation "/usr/local/bin/windsurf" "/opt/Windsurf" "Windsurf" "$target_user" "$user_home"
             ;;
     esac
     
@@ -1216,6 +1226,13 @@ process_variant_installation() {
                 *) user_data_dir="$var_user_home/.config/Cursor/User" ;;
             esac
             extensions_dir="$var_user_home/.cursor/extensions"
+            ;;
+        "Windsurf")
+            case "$(uname -s)" in
+                Darwin) user_data_dir="$var_user_home/Library/Application Support/Windsurf/User" ;;
+                *) user_data_dir="$var_user_home/.config/Windsurf/User" ;;
+            esac
+            extensions_dir="$var_user_home/.windsurf/extensions"
             ;;
         *)
             user_data_dir="$VSCODE_USER_DIR"
@@ -2117,7 +2134,7 @@ main() {
     
     # Define all supported variants
     # Order: stable first (full collection), then forks (installation only for v1)
-    VARIANT_LIST="stable insiders vscodium cursor code-oss"
+    VARIANT_LIST="stable insiders vscodium cursor code-oss windsurf"
     
     # Process each user
     for target_user in $users_list; do
@@ -2130,11 +2147,11 @@ main() {
             detect_variant_paths "$target_user" "$variant"
             [ $? -ne 0 ] && continue
             
-            # Check if this variant's user directory exists
-            [ ! -d "$VSCODE_USER_DIR" ] && continue
-            
-            # Always collect installation info for all variants
+            # Always collect installation info for all variants (doesn't require user dir)
             process_installation "$target_user"
+            
+            # Skip remaining collections if user directory doesn't exist
+            [ ! -d "$VSCODE_USER_DIR" ] && continue
             
             # v1: Full data collection only for VS Code Stable
             if [ "$COLLECT_FULL_DATA" = "0" ]; then

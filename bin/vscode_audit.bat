@@ -424,6 +424,12 @@ if "!gvc_variant!"=="code-oss" (
     set "COLLECT_FULL_DATA=0"
     exit /b 0
 )
+if "!gvc_variant!"=="windsurf" (
+    set "VARIANT_USER_DIR_SUFFIX=Windsurf"
+    set "VARIANT_EXTENSIONS_DIR_SUFFIX=.windsurf"
+    set "COLLECT_FULL_DATA=0"
+    exit /b 0
+)
 exit /b 1
 
 :get_product_name
@@ -437,6 +443,7 @@ if "!gpn_variant!"=="insiders" set "PRODUCT_NAME_RESULT=Visual Studio Code - Ins
 if "!gpn_variant!"=="vscodium" set "PRODUCT_NAME_RESULT=VSCodium"
 if "!gpn_variant!"=="cursor" set "PRODUCT_NAME_RESULT=Cursor"
 if "!gpn_variant!"=="code-oss" set "PRODUCT_NAME_RESULT=Code - OSS"
+if "!gpn_variant!"=="windsurf" set "PRODUCT_NAME_RESULT=Windsurf"
 exit /b 0
 
 :detect_variant_paths
@@ -669,12 +676,15 @@ REM Calculate next depth
 set /a "sdv_next_depth=!sdv_depth!+1"
 
 REM Scan subdirectories (only non-hidden, skip node_modules)
-for /d %%d in ("!sdv_path!\*") do (
-    set "sdv_dirname=%%~nxd"
+REM Use dir /b /ad to list directories, avoiding for /d issues with special chars
+for /f "delims=" %%d in ('dir /b /ad "!sdv_path!" 2^>nul') do (
+    set "sdv_dirname=%%d"
+    set "sdv_subdir=!sdv_path!\%%d"
     REM Skip hidden directories (start with .) and node_modules
-    if not "!sdv_dirname:~0,1!"=="." (
+    set "sdv_first_char=!sdv_dirname:~0,1!"
+    if not "!sdv_first_char!"=="." (
         if /i not "!sdv_dirname!"=="node_modules" (
-            call :scan_dir_for_vscode "%%d" "!sdv_user!" !sdv_next_depth!
+            call :scan_dir_for_vscode "!sdv_subdir!" "!sdv_user!" !sdv_next_depth!
         )
     )
 )
@@ -689,8 +699,8 @@ if not exist "!cvd_vscode_path!" exit /b 0
 if "%COLLECT_WORKSPACE_SETTINGS%"=="1" (
     if exist "!cvd_vscode_path!\settings.json" (
         set "cvd_file=!cvd_vscode_path!\settings.json"
-        echo !SEEN_WORKSPACE_FILES! | findstr /C:"|!cvd_file!|" > nul 2>&1
-        if errorlevel 1 (
+        call :check_seen_file "!cvd_file!"
+        if not defined CVD_FILE_SEEN (
             call :process_json_file "!cvd_file!" "!cvd_user!"
             set "SEEN_WORKSPACE_FILES=!SEEN_WORKSPACE_FILES!|!cvd_file!|"
         )
@@ -699,8 +709,8 @@ if "%COLLECT_WORKSPACE_SETTINGS%"=="1" (
 if "%COLLECT_TASKS%"=="1" (
     if exist "!cvd_vscode_path!\tasks.json" (
         set "cvd_file=!cvd_vscode_path!\tasks.json"
-        echo !SEEN_WORKSPACE_FILES! | findstr /C:"|!cvd_file!|" > nul 2>&1
-        if errorlevel 1 (
+        call :check_seen_file "!cvd_file!"
+        if not defined CVD_FILE_SEEN (
             call :process_json_file "!cvd_file!" "!cvd_user!"
             set "SEEN_WORKSPACE_FILES=!SEEN_WORKSPACE_FILES!|!cvd_file!|"
         )
@@ -709,8 +719,8 @@ if "%COLLECT_TASKS%"=="1" (
 if "%COLLECT_LAUNCH%"=="1" (
     if exist "!cvd_vscode_path!\launch.json" (
         set "cvd_file=!cvd_vscode_path!\launch.json"
-        echo !SEEN_WORKSPACE_FILES! | findstr /C:"|!cvd_file!|" > nul 2>&1
-        if errorlevel 1 (
+        call :check_seen_file "!cvd_file!"
+        if not defined CVD_FILE_SEEN (
             call :process_json_file "!cvd_file!" "!cvd_user!"
             set "SEEN_WORKSPACE_FILES=!SEEN_WORKSPACE_FILES!|!cvd_file!|"
         )
@@ -727,13 +737,24 @@ if not exist "!cdd_path!" exit /b 0
 if "%COLLECT_DEVCONTAINER%"=="1" (
     if exist "!cdd_path!\devcontainer.json" (
         set "cdd_file=!cdd_path!\devcontainer.json"
-        echo !SEEN_WORKSPACE_FILES! | findstr /C:"|!cdd_file!|" > nul 2>&1
-        if errorlevel 1 (
+        call :check_seen_file "!cdd_file!"
+        if not defined CVD_FILE_SEEN (
             call :process_json_file "!cdd_file!" "!cdd_user!"
             set "SEEN_WORKSPACE_FILES=!SEEN_WORKSPACE_FILES!|!cdd_file!|"
         )
     )
 )
+exit /b 0
+
+:check_seen_file
+REM Check if file path is in SEEN_WORKSPACE_FILES
+REM Sets CVD_FILE_SEEN if found, clears it otherwise
+set "csf_file=%~1"
+set "CVD_FILE_SEEN="
+if not defined SEEN_WORKSPACE_FILES exit /b 0
+REM Use string substitution to check - if replacing the path changes the string, it was found
+set "csf_test=!SEEN_WORKSPACE_FILES:|%csf_file%|=!"
+if not "!csf_test!"=="!SEEN_WORKSPACE_FILES!" set "CVD_FILE_SEEN=1"
 exit /b 0
 
 :output_session_chunk
@@ -764,8 +785,6 @@ if "%COLLECT_INSTALLATION%"=="0" exit /b 0
 call :get_user_home "%target_user%"
 if errorlevel 1 exit /b 0
 set "user_home=!USER_HOME_RESULT!"
-
-if not exist "!VSCODE_USER_DIR!" exit /b 0
 
 set "installations_array="
 set "array_first=1"
@@ -844,6 +863,16 @@ if "!CURRENT_VARIANT!"=="code-oss" (
         call :process_variant_installation "%%d\Program Files\Code - OSS\bin\code-oss.cmd" "%%d\Program Files\Code - OSS" "Code - OSS" "!target_user!" "!user_home!"
         call :process_variant_installation "%%d\Program Files (x86)\Code - OSS\bin\code-oss.cmd" "%%d\Program Files (x86)\Code - OSS" "Code - OSS" "!target_user!" "!user_home!"
     )
+)
+if "!CURRENT_VARIANT!"=="windsurf" (
+    REM System-wide installations (Program Files)
+    call :get_existing_drives
+    for %%d in (!EXISTING_DRIVES!) do (
+        call :process_variant_installation "%%d\Program Files\Windsurf\bin\windsurf.cmd" "%%d\Program Files\Windsurf" "Windsurf" "!target_user!" "!user_home!"
+        call :process_variant_installation "%%d\Program Files (x86)\Windsurf\bin\windsurf.cmd" "%%d\Program Files (x86)\Windsurf" "Windsurf" "!target_user!" "!user_home!"
+    )
+    REM User installation
+    call :process_variant_installation "!user_home!\AppData\Local\Programs\Windsurf\bin\windsurf.cmd" "!user_home!\AppData\Local\Programs\Windsurf" "Windsurf" "!target_user!" "!user_home!"
 )
 
 REM Only output if we found at least one installation
@@ -927,13 +956,20 @@ set "vscode_info=!vscode_info!,"install_type":"!pvi_install_type!""
 REM Add product name
 set "vscode_info=!vscode_info!,"product_name":"!pvi_product_name!""
 
-REM Add update_url (variant-specific)
+REM Extract update_url from product.json (dynamic detection)
 set "pvi_update_url=unknown"
-if "!pvi_product_name!"=="Visual Studio Code" set "pvi_update_url=https://update.code.visualstudio.com"
-if "!pvi_product_name!"=="Visual Studio Code - Insiders" set "pvi_update_url=https://update.code.visualstudio.com"
-if "!pvi_product_name!"=="VSCodium" set "pvi_update_url=https://github.com/VSCodium/vscodium/releases"
-if "!pvi_product_name!"=="Code - OSS" set "pvi_update_url=unknown"
-if "!pvi_product_name!"=="Cursor" set "pvi_update_url=https://cursor.sh"
+set "pvi_product_json=!pvi_install_dir!\resources\app\product.json"
+if exist "!pvi_product_json!" (
+    for /f "usebackq delims=" %%u in (`findstr /C:"\"updateUrl\"" "!pvi_product_json!" 2^>nul`) do (
+        set "pvi_url_line=%%u"
+        set "pvi_url_line=!pvi_url_line:*updateUrl":=!"
+        set "pvi_url_line=!pvi_url_line:~2!"
+        for /f "tokens=1 delims=," %%v in ("!pvi_url_line!") do (
+            set "pvi_update_url=%%v"
+            set "pvi_update_url=!pvi_update_url:"=!"
+        )
+    )
+)
 set "vscode_info=!vscode_info!,"update_url":"!pvi_update_url!""
 
 REM Add user data and extensions directories (variant-specific)
@@ -958,6 +994,10 @@ if "!pvi_product_name!"=="Code - OSS" (
 if "!pvi_product_name!"=="Cursor" (
     set "pvi_user_data_dir=!pvi_user_home!\AppData\Roaming\Cursor\User"
     set "pvi_extensions_dir=!pvi_user_home!\.cursor\extensions"
+)
+if "!pvi_product_name!"=="Windsurf" (
+    set "pvi_user_data_dir=!pvi_user_home!\AppData\Roaming\Windsurf\User"
+    set "pvi_extensions_dir=!pvi_user_home!\.windsurf\extensions"
 )
 
 if defined pvi_user_data_dir (
@@ -2764,7 +2804,7 @@ call :get_users_to_process
 
 REM Define all supported variants
 REM Order: stable first (full collection), then forks (installation only for v1)
-set "VARIANT_LIST=stable insiders vscodium cursor code-oss"
+set "VARIANT_LIST=stable insiders vscodium cursor code-oss windsurf"
 
 REM Grant SYSTEM read access to .ssh\config if requested (once per user)
 set "SSH_ACCESS_GRANTED_USERS="
@@ -2799,13 +2839,13 @@ for %%u in (!USERS_LIST!) do (
         REM Detect paths for this variant
         call :detect_variant_paths "!target_user!" "!current_variant_loop!"
         if not errorlevel 1 (
-            REM Check if this variant's user directory exists
+            REM Always collect installation info for all variants (doesn't require user dir)
+            if "%COLLECT_INSTALLATION%"=="1" (
+                call :process_installation "!target_user!"
+            )
+            
+            REM Skip remaining collections if user directory doesn't exist
             if exist "!VSCODE_USER_DIR!" (
-                REM Always collect installation info for all variants
-                if "%COLLECT_INSTALLATION%"=="1" (
-                    call :process_installation "!target_user!"
-                )
-                
                 REM Full data collection for this variant
                 if "!COLLECT_FULL_DATA!"=="1" (
                     if "%COLLECT_SETTINGS%"=="1" (
