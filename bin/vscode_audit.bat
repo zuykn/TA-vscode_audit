@@ -15,7 +15,7 @@ REM Config
 set "SCRIPT_NAME=%~nx0"
 set "USERNAME=%USERNAME%"
 if "%USERNAME%"=="" set "USERNAME=unknown"
-set "CHUNK_SIZE=10"
+set "CHUNK_SIZE=5"
 
 REM ISO8601 timestamp
 set "dt=%DATE%"
@@ -510,14 +510,6 @@ if "!EXISTING_DRIVES!"=="" (
 )
 exit /b 0
 
-:calculate_total_chunks
-set "total_items=%~1"
-set "chunk_size_val=%~2"
-if "!chunk_size_val!"=="0" set "chunk_size_val=1"
-if not defined chunk_size_val set "chunk_size_val=1"
-set /a "TOTAL_CHUNKS_RESULT=(total_items + chunk_size_val - 1) / chunk_size_val" 2>nul || set "TOTAL_CHUNKS_RESULT=1"
-exit /b 0
-
 :capitalize_drive_letter
 set "input_path=%~1"
 if not "!input_path:~1,1!"==":" (
@@ -618,12 +610,10 @@ exit /b 0
 :output_extensions_chunk
 set "chunk_user=%~1"
 set "chunk_number=%~2"
-set "total_count=%~3"
 
 set "extensions_array=!extensions_array!]"
 
-call :calculate_total_chunks !total_count! !chunk_size!
-echo {"timestamp":"!TIMESTAMP!","user":"!chunk_user!","product_name":"!CURRENT_PRODUCT_NAME!","chunk_set_id_extensions":"!CHUNK_SET_ID_EXTENSIONS!","chunk":!chunk_number!,"chunk_total":!TOTAL_CHUNKS_RESULT!,"items":!extensions_array!}
+echo {"timestamp":"!TIMESTAMP!","user":"!chunk_user!","product_name":"!CURRENT_PRODUCT_NAME!","chunk_set_id_extensions":"!CHUNK_SET_ID_EXTENSIONS!","chunk":!chunk_number!,"items":!extensions_array!}
 
 exit /b 0
 
@@ -762,13 +752,10 @@ exit /b 0
 :output_session_chunk
 set "session_chunk_user=%~1"
 set "session_chunk_number=%~2"
-set "session_total_count=%~3"
 
 set "session_items=!active_sessions_array!]"
 
-call :calculate_total_chunks !session_total_count! !chunk_size!
-
-echo {"timestamp":"!TIMESTAMP!","user":"!session_chunk_user!","product_name":"!CURRENT_PRODUCT_NAME!","chunk_set_id_sessions":"!CHUNK_SET_ID_SESSIONS!","chunk":!session_chunk_number!,"chunk_total":!TOTAL_CHUNKS_RESULT!,"items":!session_items!}
+echo {"timestamp":"!TIMESTAMP!","user":"!session_chunk_user!","product_name":"!CURRENT_PRODUCT_NAME!","chunk_set_id_sessions":"!CHUNK_SET_ID_SESSIONS!","chunk":!session_chunk_number!,"items":!session_items!}
 exit /b 0
 
 :reset_session_chunk
@@ -1390,6 +1377,11 @@ for /f "tokens=1,* delims=:" %%N in ('findstr /N /C:"\"!ema_field!\"" "!ema_file
         for /f "tokens=1 delims=]" %%A in ("!ema_temp!") do set "ema_content=%%A"
         if defined ema_content (
             set "ema_content=!ema_content: =!"
+            REM Escape special batch characters to prevent echo issues
+            set "ema_content=!ema_content:&=\u0026!"
+            set "ema_content=!ema_content:|=\u007c!"
+            set "ema_content=!ema_content:<=\u003c!"
+            set "ema_content=!ema_content:>=\u003e!"
             if not "!ema_content!"=="" if not "!ema_content!"=="," (
                 if "!ema_content:~0,1!"=="," set "ema_content=!ema_content:~1!"
                 if "!ema_content:~-1!"=="," set "ema_content=!ema_content:~0,-1!"
@@ -1422,6 +1414,11 @@ for /f "delims=" %%L in ('more +!ema_linenum! "!ema_file!"') do (
         if !ema_done!==0 if "!ema_first!"=="!EMA_QUOTE!" (
             set "ema_item=!ema_check!"
             if "!ema_item:~-1!"=="," set "ema_item=!ema_item:~0,-1!"
+            REM Escape special batch characters to prevent echo issues
+            set "ema_item=!ema_item:&=\u0026!"
+            set "ema_item=!ema_item:|=\u007c!"
+            set "ema_item=!ema_item:<=\u003c!"
+            set "ema_item=!ema_item:>=\u003e!"
             if not "!ema_items!"=="" set "ema_items=!ema_items!,"
             set "ema_items=!ema_items!!ema_item!"
         )
@@ -1600,19 +1597,6 @@ REM Pre-parse extensions.json files for metadata lookup (install_source, timesta
 call :parse_extensions_json "!user_home!\.vscode\extensions\extensions.json"
 call :parse_extensions_json "!user_home!\.vscode-server\extensions\extensions.json"
 
-REM Fast pre-count of all extension directories for accurate chunk_total
-set "total_extension_count=0"
-for /d %%d in ("!VSCODE_EXTENSIONS_DIR!\*") do (
-    set "precount_name=%%~nxd"
-    if not "!precount_name:~0,1!"=="." set /a "total_extension_count+=1"
-)
-if exist "!user_home!\.vscode-server\extensions" (
-    for /d %%d in ("!user_home!\.vscode-server\extensions\*") do (
-        set "precount_name=%%~nxd"
-        if not "!precount_name:~0,1!"=="." set /a "total_extension_count+=1"
-    )
-)
-
 set "chunk_size=!CHUNK_SIZE!"
 set "current_chunk=0"
 set "extensions_in_chunk=0"
@@ -1650,7 +1634,7 @@ for /d %%d in ("!VSCODE_EXTENSIONS_DIR!\*") do (
         
         REM Output chunk when we reach chunk_size
         if !extensions_in_chunk! EQU !chunk_size! (
-            call :output_extensions_chunk "!target_user!" !current_chunk! !total_extension_count!
+            call :output_extensions_chunk "!target_user!" !current_chunk!
             call :reset_extensions_chunk
         )
     )
@@ -1687,7 +1671,7 @@ if exist "!user_home!\.vscode-server\extensions" (
             
             REM Output chunk when we reach chunk_size
             if !extensions_in_chunk! EQU !chunk_size! (
-                call :output_extensions_chunk "!target_user!" !current_chunk! !total_extension_count!
+                call :output_extensions_chunk "!target_user!" !current_chunk!
                 call :reset_extensions_chunk
             )
         )
@@ -1695,7 +1679,7 @@ if exist "!user_home!\.vscode-server\extensions" (
 )
 
 if !extensions_in_chunk! GTR 0 (
-    call :output_extensions_chunk "!target_user!" !current_chunk! !total_extension_count!
+    call :output_extensions_chunk "!target_user!" !current_chunk!
 )
 exit /b 0
 
@@ -2129,7 +2113,7 @@ for /f "usebackq delims=" %%L in ("!temp_storage_file!") do (
                 
                 REM Output chunk when limit reached
                 if !sessions_in_chunk! EQU !chunk_size! (
-                    call :output_session_chunk "!target_user!" !current_chunk! !total_sessions!
+                    call :output_session_chunk "!target_user!" !current_chunk!
                     call :reset_session_chunk
                 )
             )
@@ -2141,7 +2125,7 @@ REM No temp file cleanup needed - using direct file processing
 
 REM Output remaining sessions if any
 if !sessions_in_chunk! GTR 0 (
-    call :output_session_chunk "!target_user!" !current_chunk! !total_sessions!
+    call :output_session_chunk "!target_user!" !current_chunk!
 )
 exit /b 0
 
@@ -2272,7 +2256,7 @@ if "!remote_authority!"=="local" (
     
     REM Output chunk when limit reached
     if !sessions_in_chunk! EQU !chunk_size! (
-        call :output_session_chunk "!target_user!" !current_chunk! !total_sessions!
+        call :output_session_chunk "!target_user!" !current_chunk!
         call :reset_session_chunk
     )
 ) else (
@@ -2400,7 +2384,7 @@ if "!remote_authority!"=="local" (
     
     REM Output chunk when limit reached
     if !sessions_in_chunk! EQU !chunk_size! (
-        call :output_session_chunk "!target_user!" !current_chunk! !total_sessions!
+        call :output_session_chunk "!target_user!" !current_chunk!
         call :reset_session_chunk
     )
 )
@@ -2573,7 +2557,7 @@ if "!connection_type!"=="local" (
     
     REM Output chunk when limit reached
     if !sessions_in_chunk! EQU !chunk_size! (
-        call :output_session_chunk "!target_user!" !current_chunk! !total_sessions!
+        call :output_session_chunk "!target_user!" !current_chunk!
         call :reset_session_chunk
     )
 )
