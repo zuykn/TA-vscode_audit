@@ -54,7 +54,7 @@ COLLECT_ACTIVE_SESSION=1
 CUSTOM_USER_DIR=""
 CUSTOM_EXTENSIONS_DIR=""
 MAX_WORKSPACE_DEPTH=5
-CHUNK_SIZE=10
+CHUNK_SIZE=5
 WORKSPACE_SEARCH_PATHS=""
 COLLECT_ALL_USERS=1
 TARGET_USER=""
@@ -447,21 +447,6 @@ process_json_file() {
     # Output JSON event
     printf '{"timestamp":"%s","user":"%s","product_name":"%s","file_path":"%s","content":"%s"}\n' \
         "$TIMESTAMP" "$target_user" "$CURRENT_PRODUCT_NAME" "$safe_file_path" "$escaped_content"
-}
-
-calculate_total_chunks() {
-    total_items="$1"
-    chunk_size="$2"
-    
-    if [ "$chunk_size" -eq 0 ] 2>/dev/null; then
-        chunk_size=1
-    fi
-    if [ -z "$chunk_size" ]; then
-        chunk_size=1
-    fi
-    
-    # Calculate ceiling division: (total + size - 1) / size
-    echo $(( (total_items + chunk_size - 1) / chunk_size ))
 }
 
 get_search_paths() {
@@ -859,7 +844,6 @@ process_extensions() {
     chunk_size=$CHUNK_SIZE
     current_chunk=0
     extensions_in_chunk=0
-    total_extensions_processed=0
     extensions_array=""
     first_in_chunk=1
     
@@ -906,11 +890,10 @@ process_extensions() {
         extensions_array="${extensions_array}{\"extension_id\":\"$ext_name\",\"name\":\"$ext_internal_name\",\"display_name\":\"$ext_display_name\",\"publisher\":\"$publisher_name\",\"version\":\"$ext_version\",\"target\":\"client\",\"install_type\":\"user\",\"install_source\":\"$EXT_INSTALL_SOURCE\",\"installed_timestamp\":\"$EXT_INSTALLED_TIMESTAMP\",\"is_prerelease\":$EXT_IS_PRERELEASE,\"is_pinned_version\":$EXT_IS_PINNED_VERSION,\"vscode_engine\":\"$ext_vscode_engine\",\"repository\":\"$ext_repository\",\"package_json_path\":\"$safe_package_json_path\",\"activation_events\":$ext_activation_events,\"workspace_trust_mode\":\"$ext_workspace_trust_mode\",\"contains_executables\":$ext_contains_executables,\"extension_dependencies\":$ext_dependencies}"
         
         extensions_in_chunk=$((extensions_in_chunk + 1))
-        total_extensions_processed=$((total_extensions_processed + 1))
         
         # Output chunk when we reach chunk_size
         if [ "$extensions_in_chunk" -eq "$chunk_size" ]; then
-            output_extensions_chunk "$target_user" "$current_chunk" "$total_extensions_processed" "$chunk_size"
+            output_extensions_chunk "$target_user" "$current_chunk"
             # Reset for next chunk
             current_chunk=$((current_chunk + 1))
             extensions_in_chunk=0
@@ -962,11 +945,10 @@ process_extensions() {
             extensions_array="${extensions_array}{\"extension_id\":\"$ext_name\",\"name\":\"$ext_internal_name\",\"display_name\":\"$ext_display_name\",\"publisher\":\"$publisher_name\",\"version\":\"$ext_version\",\"target\":\"server\",\"install_type\":\"user\",\"install_source\":\"$EXT_INSTALL_SOURCE\",\"installed_timestamp\":\"$EXT_INSTALLED_TIMESTAMP\",\"is_prerelease\":$EXT_IS_PRERELEASE,\"is_pinned_version\":$EXT_IS_PINNED_VERSION,\"vscode_engine\":\"$ext_vscode_engine\",\"repository\":\"$ext_repository\",\"package_json_path\":\"$safe_package_json_path\",\"activation_events\":$ext_activation_events,\"workspace_trust_mode\":\"$ext_workspace_trust_mode\",\"contains_executables\":$ext_contains_executables,\"extension_dependencies\":$ext_dependencies}"
             
             extensions_in_chunk=$((extensions_in_chunk + 1))
-            total_extensions_processed=$((total_extensions_processed + 1))
             
             # Output chunk when we reach chunk_size
             if [ "$extensions_in_chunk" -eq "$chunk_size" ]; then
-                output_extensions_chunk "$target_user" "$current_chunk" "$total_extensions_processed" "$chunk_size"
+                output_extensions_chunk "$target_user" "$current_chunk"
                 # Reset for next chunk
                 current_chunk=$((current_chunk + 1))
                 extensions_in_chunk=0
@@ -978,22 +960,17 @@ process_extensions() {
     
     # Output remaining extensions if any
     if [ "$extensions_in_chunk" -gt 0 ]; then
-        output_extensions_chunk "$target_user" "$current_chunk" "$total_extensions_processed" "$chunk_size"
+        output_extensions_chunk "$target_user" "$current_chunk"
     fi
 }
 
 output_extensions_chunk() {
     chunk_user="$1"
     chunk_number="$2"
-    total_count="$3"
-    chunk_size="$4"
-    
-    # Calculate total chunks
-    chunk_total=$(calculate_total_chunks "$total_count" "$chunk_size")
     
     # Output chunk
-    printf '{"timestamp":"%s","user":"%s","product_name":"%s","chunk_set_id_extensions":"%s","chunk":%d,"chunk_total":%d,"items":[%s]}\n' \
-        "$TIMESTAMP" "$chunk_user" "$CURRENT_PRODUCT_NAME" "$CHUNK_SET_ID_EXTENSIONS" "$chunk_number" "$chunk_total" "$extensions_array"
+    printf '{"timestamp":"%s","user":"%s","product_name":"%s","chunk_set_id_extensions":"%s","chunk":%d,"items":[%s]}\n' \
+        "$TIMESTAMP" "$chunk_user" "$CURRENT_PRODUCT_NAME" "$CHUNK_SET_ID_EXTENSIONS" "$chunk_number" "$extensions_array"
 }
 
 # Process installation for the CURRENT variant only
@@ -1532,15 +1509,10 @@ get_container_info_from_hex() {
 output_session_chunk() {
     chunk_user="$1"
     chunk_number="$2"
-    total_count="$3"
-    chunk_size="$4"
-    
-    # Calculate total chunks
-    chunk_total=$(calculate_total_chunks "$total_count" "$chunk_size")
     
     # Close sessions array and output chunk
-    printf '{"timestamp":"%s","user":"%s","product_name":"%s","chunk_set_id_sessions":"%s","chunk":%d,"chunk_total":%d,"items":[%s]}\n' \
-        "$TIMESTAMP" "$chunk_user" "$CURRENT_PRODUCT_NAME" "$CHUNK_SET_ID_SESSIONS" "$chunk_number" "$chunk_total" "$sessions_array"
+    printf '{"timestamp":"%s","user":"%s","product_name":"%s","chunk_set_id_sessions":"%s","chunk":%d,"items":[%s]}\n' \
+        "$TIMESTAMP" "$chunk_user" "$CURRENT_PRODUCT_NAME" "$CHUNK_SET_ID_SESSIONS" "$chunk_number" "$sessions_array"
 }
 
 # Process sessions
@@ -1738,7 +1710,7 @@ process_active_session() {
             
             # Output chunk when we reach chunk_size
             if [ "$sessions_in_chunk" -eq "$chunk_size" ]; then
-                output_session_chunk "$target_user" "$current_chunk" "$total_sessions_processed" "$chunk_size"
+                output_session_chunk "$target_user" "$current_chunk"
                 # Reset for next chunk
                 current_chunk=$((current_chunk + 1))
                 sessions_in_chunk=0
@@ -2010,7 +1982,7 @@ process_active_session() {
                 
                 # Output chunk when we reach chunk_size
                 if [ "$sessions_in_chunk" -eq "$chunk_size" ]; then
-                    output_session_chunk "$target_user" "$current_chunk" "$total_sessions_processed" "$chunk_size"
+                    output_session_chunk "$target_user" "$current_chunk"
                     # Reset for next chunk
                     current_chunk=$((current_chunk + 1))
                     sessions_in_chunk=0
@@ -2127,7 +2099,7 @@ process_active_session() {
                 
                 # Output chunk when we reach chunk_size
                 if [ "$sessions_in_chunk" -eq "$chunk_size" ]; then
-                    output_session_chunk "$target_user" "$current_chunk" "$total_sessions_processed" "$chunk_size"
+                    output_session_chunk "$target_user" "$current_chunk"
                     # Reset for next chunk
                     current_chunk=$((current_chunk + 1))
                     sessions_in_chunk=0
@@ -2244,7 +2216,7 @@ process_active_session() {
                 
                 # Output chunk when we reach chunk_size
                 if [ "$sessions_in_chunk" -eq "$chunk_size" ]; then
-                    output_session_chunk "$target_user" "$current_chunk" "$total_sessions_processed" "$chunk_size"
+                    output_session_chunk "$target_user" "$current_chunk"
                     # Reset for next chunk
                     current_chunk=$((current_chunk + 1))
                     sessions_in_chunk=0
@@ -2307,7 +2279,7 @@ process_active_session() {
             
             # Output chunk when we reach chunk_size
             if [ "$sessions_in_chunk" -eq "$chunk_size" ]; then
-                output_session_chunk "$target_user" "$current_chunk" "$total_sessions_processed" "$chunk_size"
+                output_session_chunk "$target_user" "$current_chunk"
                 # Reset for next chunk
                 current_chunk=$((current_chunk + 1))
                 sessions_in_chunk=0
@@ -2321,7 +2293,7 @@ process_active_session() {
     
     # Output remaining sessions if any
     if [ "$sessions_in_chunk" -gt 0 ]; then
-        output_session_chunk "$target_user" "$current_chunk" "$total_sessions_processed" "$chunk_size"
+        output_session_chunk "$target_user" "$current_chunk"
     fi
 }
 
