@@ -2891,7 +2891,11 @@ for %%u in (!USERS_LIST!) do (
             if not errorlevel 1 (
                 set "ssh_config_path=!USER_HOME_RESULT!\.ssh\config"
                 if exist "!ssh_config_path!" (
-                    icacls "!ssh_config_path!" /grant "SYSTEM:R" >nul 2>nul
+                    REM Check if SYSTEM already has read access before granting
+                    icacls "!ssh_config_path!" 2>nul | findstr /i /c:"NT AUTHORITY\SYSTEM" >nul 2>nul
+                    if errorlevel 1 (
+                        icacls "!ssh_config_path!" /grant "SYSTEM:R" >nul 2>nul
+                    )
                 )
             )
             if "!SSH_ACCESS_GRANTED_USERS!"=="" (
