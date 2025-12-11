@@ -604,7 +604,7 @@ call :capitalize_drive_letter "!json_file_path!"
 set "json_file_path=!CAPITALIZED_PATH_RESULT!"
 set "safe_file_path=!json_file_path:\=\\!"
 
-echo {"timestamp":"!TIMESTAMP!","user":"!target_user!","product_name":"!CURRENT_PRODUCT_NAME!","file_path":"!safe_file_path!","content":"!escaped_content!"}
+echo {"timestamp":"!TIMESTAMP!","product_name":"!CURRENT_PRODUCT_NAME!","user":"!target_user!","file_path":"!safe_file_path!","content":"!escaped_content!"}
 exit /b 0
 
 :output_extensions_chunk
@@ -613,7 +613,7 @@ set "chunk_number=%~2"
 
 set "extensions_array=!extensions_array!]"
 
-echo {"timestamp":"!TIMESTAMP!","user":"!chunk_user!","product_name":"!CURRENT_PRODUCT_NAME!","chunk_set_id_extensions":"!CHUNK_SET_ID_EXTENSIONS!","chunk":!chunk_number!,"items":!extensions_array!}
+echo {"timestamp":"!TIMESTAMP!","product_name":"!CURRENT_PRODUCT_NAME!","user":"!chunk_user!","chunk_set_id_extensions":"!CHUNK_SET_ID_EXTENSIONS!","chunk":!chunk_number!,"items":!extensions_array!}
 
 exit /b 0
 
@@ -755,7 +755,7 @@ set "session_chunk_number=%~2"
 
 set "session_items=!active_sessions_array!]"
 
-echo {"timestamp":"!TIMESTAMP!","user":"!session_chunk_user!","product_name":"!CURRENT_PRODUCT_NAME!","chunk_set_id_sessions":"!CHUNK_SET_ID_SESSIONS!","chunk":!session_chunk_number!,"items":!session_items!}
+echo {"timestamp":"!TIMESTAMP!","product_name":"!CURRENT_PRODUCT_NAME!","user":"!session_chunk_user!","chunk_set_id_sessions":"!CHUNK_SET_ID_SESSIONS!","chunk":!session_chunk_number!,"items":!session_items!}
 exit /b 0
 
 :reset_session_chunk
@@ -866,7 +866,7 @@ if "!CURRENT_VARIANT!"=="windsurf" (
 
 REM Only output if we found at least one installation
 if defined installations_array (
-    echo {"timestamp":"!TIMESTAMP!","user":"!target_user!","product_name":"!CURRENT_PRODUCT_NAME!","items":[!installations_array!]}
+    echo {"timestamp":"!TIMESTAMP!","product_name":"!CURRENT_PRODUCT_NAME!","user":"!target_user!","items":[!installations_array!]}
 )
 exit /b 0
 

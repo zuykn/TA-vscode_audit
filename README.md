@@ -162,8 +162,8 @@ Discovered VS Code installations (client and remote server components) per user.
 | Field | Description |
 |-------|-------------|
 | `timestamp` | ISO 8601 event timestamp |
-| `user` | Local username |
 | `product_name` | Product variant name (Visual Studio Code, VSCodium, Cursor, etc.) |
+| `user` | Local username |
 | `version` | VS Code version number |
 | `commit_id` | Git commit hash of the build |
 | `architecture` | CPU architecture (x64, arm64) |
@@ -182,8 +182,8 @@ User-level `settings.json` containing editor preferences, enabled features, and 
 | Field | Description |
 |-------|-------------|
 | `timestamp` | ISO 8601 event timestamp |
-| `user` | Local username |
 | `product_name` | Product variant name |
+| `user` | Local username |
 | `file_path` | Path to settings.json |
 | `content` | Raw file content |
 
@@ -194,8 +194,8 @@ User-level `argv.json` containing VS Code startup arguments (locale, crash repor
 | Field | Description |
 |-------|-------------|
 | `timestamp` | ISO 8601 event timestamp |
-| `user` | Local username |
 | `product_name` | Product variant name |
+| `user` | Local username |
 | `file_path` | Path to argv.json |
 | `content` | Raw file content |
 
@@ -206,8 +206,8 @@ Project-level `.vscode/settings.json` containing workspace-specific editor and l
 | Field | Description |
 |-------|-------------|
 | `timestamp` | ISO 8601 event timestamp |
-| `user` | Local username |
 | `product_name` | Product variant name |
+| `user` | Local username |
 | `file_path` | Path to workspace settings.json |
 | `content` | Raw file content |
 
@@ -218,8 +218,8 @@ Project-level `.vscode/tasks.json` defining build, test, and automation tasks.
 | Field | Description |
 |-------|-------------|
 | `timestamp` | ISO 8601 event timestamp |
-| `user` | Local username |
 | `product_name` | Product variant name |
+| `user` | Local username |
 | `file_path` | Path to tasks.json |
 | `content` | Raw file content |
 
@@ -230,8 +230,8 @@ Project-level `.vscode/launch.json` defining debug configurations, including pro
 | Field | Description |
 |-------|-------------|
 | `timestamp` | ISO 8601 event timestamp |
-| `user` | Local username |
 | `product_name` | Product variant name |
+| `user` | Local username |
 | `file_path` | Path to launch.json |
 | `content` | Raw file content |
 
@@ -242,22 +242,22 @@ Project-level `.devcontainer/devcontainer.json` defining development container c
 | Field | Description |
 |-------|-------------|
 | `timestamp` | ISO 8601 event timestamp |
-| `user` | Local username |
 | `product_name` | Product variant name |
+| `user` | Local username |
 | `file_path` | Path to devcontainer.json |
 | `content` | Raw file content |
 
 ### `vscode:extensions`
 
-Installed extensions inventory for client and server environments (chunked, 10 items/event). Includes install source, trust mode, executable detection, and activation events.
+Installed extensions inventory for client and server environments (chunked, 5 items/event). Includes install source, trust mode, executable detection, and activation events.
 
 | Field | Description |
 |-------|-------------|
 | `timestamp` | ISO 8601 event timestamp |
-| `user` | Local username |
 | `product_name` | Product variant name |
-| `chunk` | Current chunk index (0-based) |
+| `user` | Local username |
 | `chunk_set_id_extensions` | Unique ID to correlate chunks for this collection run |
+| `chunk` | Current chunk index (0-based) |
 | `items` | Array of extension objects (see below) |
 
 **Extension object fields** (within `items` array):
@@ -282,15 +282,15 @@ Installed extensions inventory for client and server environments (chunked, 10 i
 
 ### `vscode:sessions`
 
-Active and recent sessions inventory (chunked, 10 items/event). Tracks local, SSH, WSL, and container connections with authentication method and workspace context.
+Active and recent sessions inventory (chunked, 5 items/event). Tracks local, SSH, WSL, and container connections with authentication method and workspace context.
 
 | Field | Description |
 |-------|-------------|
 | `timestamp` | ISO 8601 event timestamp |
-| `user` | Local username |
 | `product_name` | Product variant name |
-| `chunk` | Current chunk index (0-based) |
+| `user` | Local username |
 | `chunk_set_id_sessions` | Unique ID to correlate chunks for this collection run |
+| `chunk` | Current chunk index (0-based) |
 | `items` | Array of session objects (see below) |
 
 **Session object fields** (within `items` array):

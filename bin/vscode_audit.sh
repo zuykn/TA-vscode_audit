@@ -445,8 +445,8 @@ process_json_file() {
     safe_file_path=$(echo "$file_path" | sed 's/\\/\\\\/g; s/"/\\"/g')
     
     # Output JSON event
-    printf '{"timestamp":"%s","user":"%s","product_name":"%s","file_path":"%s","content":"%s"}\n' \
-        "$TIMESTAMP" "$target_user" "$CURRENT_PRODUCT_NAME" "$safe_file_path" "$escaped_content"
+    printf '{"timestamp":"%s","product_name":"%s","user":"%s","file_path":"%s","content":"%s"}\n' \
+        "$TIMESTAMP" "$CURRENT_PRODUCT_NAME" "$target_user" "$safe_file_path" "$escaped_content"
 }
 
 get_search_paths() {
@@ -969,8 +969,8 @@ output_extensions_chunk() {
     chunk_number="$2"
     
     # Output chunk
-    printf '{"timestamp":"%s","user":"%s","product_name":"%s","chunk_set_id_extensions":"%s","chunk":%d,"items":[%s]}\n' \
-        "$TIMESTAMP" "$chunk_user" "$CURRENT_PRODUCT_NAME" "$CHUNK_SET_ID_EXTENSIONS" "$chunk_number" "$extensions_array"
+    printf '{"timestamp":"%s","product_name":"%s","user":"%s","chunk_set_id_extensions":"%s","chunk":%d,"items":[%s]}\n' \
+        "$TIMESTAMP" "$CURRENT_PRODUCT_NAME" "$chunk_user" "$CHUNK_SET_ID_EXTENSIONS" "$chunk_number" "$extensions_array"
 }
 
 # Process installation for the CURRENT variant only
@@ -1070,8 +1070,8 @@ process_installation() {
     
     # Only output if we found at least one installation
     if [ -n "$installations_array" ]; then
-        printf '{"timestamp":"%s","user":"%s","product_name":"%s","items":[%s]}\n' \
-            "$TIMESTAMP" "$target_user" "$CURRENT_PRODUCT_NAME" "$installations_array"
+        printf '{"timestamp":"%s","product_name":"%s","user":"%s","items":[%s]}\n' \
+            "$TIMESTAMP" "$CURRENT_PRODUCT_NAME" "$target_user" "$installations_array"
     fi
 }
 
@@ -1511,8 +1511,8 @@ output_session_chunk() {
     chunk_number="$2"
     
     # Close sessions array and output chunk
-    printf '{"timestamp":"%s","user":"%s","product_name":"%s","chunk_set_id_sessions":"%s","chunk":%d,"items":[%s]}\n' \
-        "$TIMESTAMP" "$chunk_user" "$CURRENT_PRODUCT_NAME" "$CHUNK_SET_ID_SESSIONS" "$chunk_number" "$sessions_array"
+    printf '{"timestamp":"%s","product_name":"%s","user":"%s","chunk_set_id_sessions":"%s","chunk":%d,"items":[%s]}\n' \
+        "$TIMESTAMP" "$CURRENT_PRODUCT_NAME" "$chunk_user" "$CHUNK_SET_ID_SESSIONS" "$chunk_number" "$sessions_array"
 }
 
 # Process sessions
