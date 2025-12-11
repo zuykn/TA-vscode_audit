@@ -306,6 +306,8 @@ Active and recent sessions inventory (chunked, 5 items/event). Tracks local, SSH
 | `is_active` | `true` if VS Code running and window open |
 | `storage_file_path` | Path to storage.json source |
 
+> **Note – Remote username resolution**: For recent SSH sessions, `user` is resolved from the `User` directive in SSH config; historical sessions report `unknown` to avoid assumptions. Container sessions always report `unknown` as Docker doesn't expose this context.
+
 ## Support
 
 Need help, want a custom version, or have a feature request? Contact us—​we're happy to help!
