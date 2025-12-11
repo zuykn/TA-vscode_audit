@@ -4,55 +4,43 @@ Collects Visual Studio Code configuration, extensions, workspace settings, and r
 
 ## Features
 
-### Platform
-- **Cross-platform**: Windows (batch), macOS (POSIX shell) – zero external dependencies, maximum compatibility across environments.
-- **Multi-variant detection**: Discovers VS Code Stable, Insiders, VSCodium, Code-OSS, Cursor, and Windsurf installations (v1: full collection for VS Code Stable only; others reported in installation inventory).
+- **Cross-platform**: Windows (batch), macOS (POSIX shell) – zero external dependencies.
+- **Multi-variant detection**: Discovers VS Code Stable, Insiders, VSCodium, Code-OSS, Cursor, and Windsurf installations.
 - **Installation inventory**: Captures version, commit ID, architecture, install type (user/system), and client + server components.
 - **Complete extension inventory**: Captures client and server extensions with install source, dependencies, trust mode, and pinned versions.
 - **Remote session tracking**: SSH, WSL, attached containers, and dev-containers with connection metadata (host, user, auth method).
 - **User configuration**: Collects `settings.json` and `argv.json` (startup arguments).
 - **Workspace configuration audit**: Collects per-project `.vscode/settings.json`, `tasks.json`, `launch.json`, and `devcontainer.json`.
 
-### Customization
-- Collection scope (both scripts):
+## Security
 
-  - `-user <username>` – collect only for a specific user (default: all users)
-  - `-user-dir <path>` – override VS Code user directory
-  - `-extensions-dir <path>` – override extensions directory
-  - `-workspace-paths <paths>` – custom workspace search paths (comma-separated)
-  - `-max-workspace-depth <num>` – max directory depth for workspace scan (default: `5`)
-
-- Disable specific collections:
-
-  - `-no-settings` – skip `settings.json`
-  - `-no-argv` – skip `argv.json`
-  - `-no-workspace-settings` – skip `.vscode/settings.json`
-  - `-no-tasks` – skip `.vscode/tasks.json`
-  - `-no-launch` – skip `.vscode/launch.json`
-  - `-no-devcontainer` – skip `.devcontainer/devcontainer.json`
-  - `-no-installation` – skip installation discovery
-  - `-no-extensions` – skip extensions inventory
-  - `-no-sessions` – skip sessions (`vscode:sessions`)
-
-- SSH access (Windows only):
-
-  - `-grant-ssh-config-read` – grant SYSTEM read access to `.ssh\config` for SSH username detection
-
-### Security
 - Does **not** collect API keys, secrets, or credentials.
 - Local filesystem only; no network calls.
 - Only metadata from SSH configuration is used (user and auth method).
 
-> **Note – SSH username detection (Windows)**: The scripts read `%USERPROFILE%\.ssh\config` to resolve SSH usernames and auth methods. When Splunk runs as **LocalSystem**, it cannot read user SSH configs—SSH usernames will appear as `"unknown"`. To enable SSH username detection, use the `-grant-ssh-config-read` flag or manually grant access:
-> ```cmd
-> icacls "C:\Users\<username>\.ssh\config" /grant "SYSTEM:R"
-> ```
-> ⚠️ **Why this isn't default**: Windows protects `.ssh` directories with user-only ACLs by design—SSH clients require restricted permissions and will refuse to use keys if permissions are too open. The command above grants SYSTEM read access to **only** the `config` file (not private keys). Evaluate whether exposing SSH config metadata (hostnames, usernames, key paths) to LocalSystem processes aligns with your security policies before enabling.
+## Performance
 
-### Performance
 - Chunked output for large lists (extensions and sessions) – 10 items per event.
 - Depth‑limited workspace scanning (default depth 5).
 - Single‑line JSON events for efficient ingestion.
+
+**Typical runtime**: macOS usually completes in under 10 seconds; Windows typically in under 60 seconds. The Windows script is pure batch and is designed to stay within `cmd.exe`’s ~8 KB environment-variable limit using chunked output and no external tools, ensuring compatibility on stock Windows hosts.
+
+## Compatibility
+
+### VS Code Versions
+- **Supported**: VS Code 1.70 and later (July 2022+)
+
+### Operating Systems
+| Platform | Script | Requirements |
+|----------|--------|--------------|
+| Windows | `vscode_audit.bat` | Windows 7+ with Batch (no PowerShell required) |
+| macOS | `vscode_audit.sh` | macOS 10.13+ with POSIX shell |
+
+### Dependencies
+- **None** – Both scripts are self-contained with zero external dependencies
+- No Python, PowerShell, jq, or other tools required
+- Run as LocalSystem (Windows) or root (macOS) for multi-user collection
 
 ## VS Code Variants
 
@@ -64,25 +52,23 @@ Both scripts detect installations for these variants and expose them via `vscode
 - Cursor
 - Windsurf
 
-For **v1**:
-
-- Full data collection (settings, extensions, sessions, workspace files) is limited to **VS Code Stable**.
-- Other variants are currently reported in installation inventory only (for visibility).
+For **v1**: Full data collection (settings, extensions, sessions, workspace files) is limited to **VS Code Stable**. Other variants are reported in installation inventory only.
 
 ## Installation
 
 1. Install the add‑on under `$SPLUNK_HOME/etc/apps/` on:
-  - **Universal Forwarders** (to run the collection scripts).
-  - **Search heads** (for search‑time field extractions and props).
+   - **Universal Forwarders** – to run the collection scripts.
+   - **Heavy Forwarders / Indexers** – for index-time sourcetype routing (`props.conf` + `transforms.conf`).
+   - **Search Heads** – for search-time JSON field extraction (`KV_MODE = json`).
 2. On each Universal Forwarder, configure `inputs.conf`:
-  - Set the target `index`.
-  - Set `interval` (recommended: `3600` seconds).
-  - Add or adjust script stanzas as needed (see examples below).
-  - **Enable only one scripted input stanza per Universal Forwarder** to avoid duplicate events.
+   - Set the target `index`.
+   - Set `interval` (recommended: `3600` seconds).
+   - Adjust script stanzas as needed (see examples below).
+   - **Enable only one scripted input stanza per Universal Forwarder** to avoid duplicate events.
 3. Ensure each scripted input has `disabled = 0` in `inputs.conf`.
 4. Restart:
-  - The **Universal Forwarders** where the add‑on is installed.
-  - Any **search heads** using the add‑on.
+   - The **Universal Forwarders** where the add‑on is installed.
+   - Any **search heads** using the add‑on.
 
 ## Usage
 
@@ -109,9 +95,15 @@ Disable collections:
     -no-extensions             Skip extensions inventory
     -no-sessions               Skip session collection
 
-SSH Config SYSTEM Read Access (Windows only):
-    -grant-ssh-config-read     Grant SYSTEM read access to `%USERPROFILE%\.ssh\config` to enable SSH username detection for remote sessions.
+Windows only:
+    -grant-ssh-config-read     Grant SYSTEM read access to .ssh\config for SSH username detection
 ```
+
+> **Note – SSH username detection (Windows)**: The scripts read `%USERPROFILE%\.ssh\config` to resolve SSH usernames and auth methods. When Splunk runs as **LocalSystem**, it cannot read user SSH configs—SSH usernames will appear as `"unknown"`. To enable SSH username detection, use the `-grant-ssh-config-read` flag or manually grant access:
+> ```cmd
+> icacls "C:\Users\<username>\.ssh\config" /grant "SYSTEM:R"
+> ```
+> ⚠️ **Why this isn't default**: Windows protects `.ssh` directories with user-only ACLs by design—SSH clients require restricted permissions and will refuse to use keys if permissions are too open. The command above grants SYSTEM read access to **only** the `config` file (not private keys). Evaluate whether exposing SSH config metadata (hostnames, usernames, key paths) to LocalSystem processes aligns with your security policies before enabling.
 
 ### Example inputs.conf stanzas
 
@@ -123,13 +115,13 @@ SSH Config SYSTEM Read Access (Windows only):
 index = main
 interval = 3600
 disabled = 0
- 
+
 # Single user, skip devcontainer
 [script://.\bin\vscode_audit.bat -user developer -no-devcontainer]
 index = main
 interval = 3600
 disabled = 0
- 
+
 # Extensions-only audit for one user
 [script://.\bin\vscode_audit.bat -user developer -no-settings -no-argv -no-workspace-settings -no-tasks -no-launch -no-devcontainer -no-installation -no-sessions]
 index = main
@@ -145,13 +137,13 @@ disabled = 0
 index = main
 interval = 3600
 disabled = 0
- 
+
 # Single user, skip extensions
 [script://./bin/vscode_audit.sh -user dev -no-extensions]
 index = main
 interval = 3600
 disabled = 0
- 
+
 # Single user with custom workspaces, shallow scan
 [script://./bin/vscode_audit.sh -user dev -workspace-paths "/Users/dev/src,/Users/dev/projects" -max-workspace-depth 3]
 index = main
@@ -161,7 +153,7 @@ disabled = 0
 
 ## Sourcetypes
 
-The add‑on emits **9** sourcetypes:
+The add‑on supports **9** sourcetypes:
 
 ### `vscode:installation`
 
@@ -169,6 +161,9 @@ Discovered VS Code installations (client and remote server components) per user.
 
 | Field | Description |
 |-------|-------------|
+| `timestamp` | ISO 8601 event timestamp |
+| `user` | Local username |
+| `product_name` | Product variant name (Visual Studio Code, VSCodium, Cursor, etc.) |
 | `version` | VS Code version number |
 | `commit_id` | Git commit hash of the build |
 | `architecture` | CPU architecture (x64, arm64) |
@@ -176,7 +171,6 @@ Discovered VS Code installations (client and remote server components) per user.
 | `install_type` | `user` or `system` scope |
 | `install_path` | Root installation directory |
 | `executable_path` | Path to the VS Code binary |
-| `product_name` | Product variant name (same for client and server; use `target` to distinguish) |
 | `update_url` | Update endpoint URL |
 | `user_data_dir` | User settings directory |
 | `extensions_dir` | Extensions directory |
@@ -187,6 +181,9 @@ User-level `settings.json` containing editor preferences, enabled features, and 
 
 | Field | Description |
 |-------|-------------|
+| `timestamp` | ISO 8601 event timestamp |
+| `user` | Local username |
+| `product_name` | Product variant name |
 | `file_path` | Path to settings.json |
 | `content` | Raw file content |
 
@@ -196,6 +193,9 @@ User-level `argv.json` containing VS Code startup arguments (locale, crash repor
 
 | Field | Description |
 |-------|-------------|
+| `timestamp` | ISO 8601 event timestamp |
+| `user` | Local username |
+| `product_name` | Product variant name |
 | `file_path` | Path to argv.json |
 | `content` | Raw file content |
 
@@ -205,6 +205,9 @@ Project-level `.vscode/settings.json` containing workspace-specific editor and l
 
 | Field | Description |
 |-------|-------------|
+| `timestamp` | ISO 8601 event timestamp |
+| `user` | Local username |
+| `product_name` | Product variant name |
 | `file_path` | Path to workspace settings.json |
 | `content` | Raw file content |
 
@@ -214,6 +217,9 @@ Project-level `.vscode/tasks.json` defining build, test, and automation tasks.
 
 | Field | Description |
 |-------|-------------|
+| `timestamp` | ISO 8601 event timestamp |
+| `user` | Local username |
+| `product_name` | Product variant name |
 | `file_path` | Path to tasks.json |
 | `content` | Raw file content |
 
@@ -223,6 +229,9 @@ Project-level `.vscode/launch.json` defining debug configurations, including pro
 
 | Field | Description |
 |-------|-------------|
+| `timestamp` | ISO 8601 event timestamp |
+| `user` | Local username |
+| `product_name` | Product variant name |
 | `file_path` | Path to launch.json |
 | `content` | Raw file content |
 
@@ -232,12 +241,27 @@ Project-level `.devcontainer/devcontainer.json` defining development container c
 
 | Field | Description |
 |-------|-------------|
+| `timestamp` | ISO 8601 event timestamp |
+| `user` | Local username |
+| `product_name` | Product variant name |
 | `file_path` | Path to devcontainer.json |
 | `content` | Raw file content |
 
 ### `vscode:extensions`
 
 Installed extensions inventory for client and server environments (chunked, 10 items/event). Includes install source, trust mode, executable detection, and activation events.
+
+| Field | Description |
+|-------|-------------|
+| `timestamp` | ISO 8601 event timestamp |
+| `user` | Local username |
+| `product_name` | Product variant name |
+| `chunk` | Current chunk index (1-based) |
+| `chunk_total` | Total number of chunks |
+| `chunk_set_id_extensions` | Unique ID to correlate chunks for this collection run |
+| `items` | Array of extension objects (see below) |
+
+**Extension object fields** (within `items` array):
 
 | Field | Description |
 |-------|-------------|
@@ -256,12 +280,22 @@ Installed extensions inventory for client and server environments (chunked, 10 i
 | `contains_executables` | Extension contains one or more of the following executable files:<br>• **Native**: `.exe`, `.dll`, `.so`, `.dylib`, `.node`, `.a`, `.lib`<br>• **Bytecode**: `.wasm`, `.jar`, `.class`, `.pyc`, `.pyo`<br>• **Scripts**: `.ps1`, `.bat`, `.cmd`, `.sh`, `.bash`, `.py`, `.rb`, `.pl`, `.lua`, `.vbs`, `.fish` |
 | `activation_events` | Events that trigger activation |
 | `extension_dependencies` | List of required extension IDs (dependencies) |
-| `chunk` / `chunk_total` | Chunk index and total count |
-| `chunk_set_id_extensions` | Unique ID to correlate chunks |
 
 ### `vscode:sessions`
 
 Active and recent sessions inventory (chunked, 10 items/event). Tracks local, SSH, WSL, and container connections with authentication method and workspace context.
+
+| Field | Description |
+|-------|-------------|
+| `timestamp` | ISO 8601 event timestamp |
+| `user` | Local username |
+| `product_name` | Product variant name |
+| `chunk` | Current chunk index (1-based) |
+| `chunk_total` | Total number of chunks |
+| `chunk_set_id_sessions` | Unique ID to correlate chunks for this collection run |
+| `items` | Array of session objects (see below) |
+
+**Session object fields** (within `items` array):
 
 | Field | Description |
 |-------|-------------|
@@ -273,8 +307,6 @@ Active and recent sessions inventory (chunked, 10 items/event). Tracks local, SS
 | `workspace_path` | Path to opened folder/workspace |
 | `is_active` | `true` if VS Code running and window open |
 | `storage_file_path` | Path to storage.json source |
-| `chunk` / `chunk_total` | Chunk index and total count |
-| `chunk_set_id_sessions` | Unique ID to correlate chunks |
 
 ## Support
 
@@ -284,6 +316,7 @@ Need help, want a custom version, or have a feature request? Contact us—​we'
 - **Email**: support@zuykn.io
 
 ## License
+
 This add-on is licensed under the zuykn Private Commercial Use License Version 1.0.
 See the `LICENSE` file in the project root for full terms.
 
