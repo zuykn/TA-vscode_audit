@@ -14,7 +14,7 @@ SCRIPT_NAME=$(basename "$0")
 CURRENT_USER=$(whoami 2>/dev/null || echo "unknown")
 
 # ISO8601 timestamp
-TIMESTAMP=$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null | sed 's/\([0-9][0-9]\)$/:\1/' || echo "unknown")
+TIMESTAMP=$(date '+%Y-%m-%dT%H:%M:%S%z' 2>/dev/null || echo "unknown")
 
 # Chunk IDs
 TIME_SUFFIX=$(date '+%H%M%S' 2>/dev/null)
