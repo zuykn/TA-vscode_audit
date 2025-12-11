@@ -20,7 +20,7 @@ Collects Visual Studio Code configuration, extensions, workspace settings, and r
 
 ## Performance
 
-- Chunked output for large lists (extensions and sessions) – 10 items per event.
+- Chunked output for large lists (extensions and sessions) – 5 items per event.
 - Depth‑limited workspace scanning (default depth 5).
 - Single‑line JSON events for efficient ingestion.
 
@@ -256,8 +256,7 @@ Installed extensions inventory for client and server environments (chunked, 10 i
 | `timestamp` | ISO 8601 event timestamp |
 | `user` | Local username |
 | `product_name` | Product variant name |
-| `chunk` | Current chunk index (1-based) |
-| `chunk_total` | Total number of chunks |
+| `chunk` | Current chunk index (0-based) |
 | `chunk_set_id_extensions` | Unique ID to correlate chunks for this collection run |
 | `items` | Array of extension objects (see below) |
 
@@ -290,8 +289,7 @@ Active and recent sessions inventory (chunked, 10 items/event). Tracks local, SS
 | `timestamp` | ISO 8601 event timestamp |
 | `user` | Local username |
 | `product_name` | Product variant name |
-| `chunk` | Current chunk index (1-based) |
-| `chunk_total` | Total number of chunks |
+| `chunk` | Current chunk index (0-based) |
 | `chunk_set_id_sessions` | Unique ID to correlate chunks for this collection run |
 | `items` | Array of session objects (see below) |
 
